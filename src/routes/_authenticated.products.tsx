@@ -56,6 +56,23 @@ function Products() {
   const [form, setForm] = useState(blank);
   const [catOpen, setCatOpen] = useState(false);
   const [catName, setCatName] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const handleUpload = async (file: File) => {
+    if (!file.type.startsWith("image/")) { toast.error("Please choose an image file"); return; }
+    if (file.size > 5 * 1024 * 1024) { toast.error("Max image size is 5MB"); return; }
+    setUploading(true);
+    try {
+      const ext = file.name.split(".").pop() || "jpg";
+      const path = `${crypto.randomUUID()}.${ext}`;
+      const { error } = await supabase.storage.from("product-images").upload(path, file, { cacheControl: "3600", upsert: false });
+      if (error) throw error;
+      setForm((f) => ({ ...f, image_url: path }));
+      toast.success("Image uploaded");
+    } catch (e: any) { toast.error(e.message); }
+    finally { setUploading(false); }
+  };
 
   const edit = (p: any) => {
     setForm({
