@@ -9,7 +9,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
 const nav = [
-  { title: "Dashboard", url: "/", icon: LayoutDashboard },
+  { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
   { title: "Sales (POS)", url: "/sales", icon: ShoppingCart },
   { title: "Sales History", url: "/sales/history", icon: History },
   { title: "Inventory", url: "/inventory", icon: Boxes },
