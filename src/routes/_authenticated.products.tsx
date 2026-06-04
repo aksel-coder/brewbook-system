@@ -143,7 +143,17 @@ function Products() {
                     <div className="space-y-1.5"><Label>Stock Qty</Label><Input type="number" min="0" required value={form.stock_quantity} onChange={e => setForm({ ...form, stock_quantity: e.target.value })} /></div>
                     <div className="space-y-1.5"><Label>Low Stock Alert</Label><Input type="number" min="0" required value={form.low_stock_threshold} onChange={e => setForm({ ...form, low_stock_threshold: e.target.value })} /></div>
                   </div>
-                  <div className="space-y-1.5"><Label>Image URL (optional)</Label><Input value={form.image_url} onChange={e => setForm({ ...form, image_url: e.target.value })} /></div>
+                  <div className="space-y-1.5">
+                    <Label>Product Image</Label>
+                    <div className="flex items-center gap-3">
+                      <ProductImage path={form.image_url} className="h-16 w-16 rounded-md border" />
+                      <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUpload(f); e.target.value = ""; }} />
+                      <Button type="button" variant="outline" disabled={uploading} onClick={() => fileRef.current?.click()}>
+                        <Upload className="mr-1 h-4 w-4" /> {uploading ? "Uploading…" : form.image_url ? "Replace" : "Upload"}
+                      </Button>
+                      {form.image_url && <Button type="button" variant="ghost" size="sm" onClick={() => setForm({ ...form, image_url: "" })}>Remove</Button>}
+                    </div>
+                  </div>
                   <Button type="submit" className="w-full">Save</Button>
                 </form>
               </DialogContent>
