@@ -164,6 +164,7 @@ function Products() {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead>Image</TableHead>
                     <TableHead>Name</TableHead><TableHead>Category</TableHead>
                     <TableHead className="text-right">Price</TableHead><TableHead className="text-right">Cost</TableHead>
                     <TableHead className="text-right">Stock</TableHead><TableHead></TableHead>
