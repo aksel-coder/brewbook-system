@@ -173,6 +173,7 @@ function Products() {
                 <TableBody>
                   {(products as any[]).map(p => (
                     <TableRow key={p.id}>
+                      <TableCell><ProductImage path={p.image_url} className="h-10 w-10 rounded-md border" /></TableCell>
                       <TableCell className="font-medium">{p.name}</TableCell>
                       <TableCell>{p.categories?.name ?? "—"}</TableCell>
                       <TableCell className="text-right">{peso(p.price)}</TableCell>
