@@ -11,8 +11,8 @@ import logo from "@/assets/coffee-zone-logo.jpg.asset.json";
 
 export const Route = createFileRoute("/login")({
   beforeLoad: async () => {
-    const { data } = await supabase.auth.getUser();
-    if (data.user) throw redirect({ to: "/" });
+    const { data } = await supabase.auth.getSession();
+    if (data.session) throw redirect({ to: "/dashboard" as any });
   },
   head: () => ({ meta: [{ title: "Sign in — Coffee Zone" }] }),
   component: LoginPage,
