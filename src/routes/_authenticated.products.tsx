@@ -38,7 +38,7 @@ export const Route = createFileRoute("/_authenticated/products")({
 });
 
 const peso = (n: number) => "₱" + Number(n).toLocaleString("en-PH", { minimumFractionDigits: 2 });
-const blank = { id: "", name: "", description: "", category_id: "", price: "", cost: "", stock_quantity: "", low_stock_threshold: "10", image_url: "" };
+const blank = { id: "", name: "", description: "", category_id: "", price: "", stock_quantity: "", low_stock_threshold: "10", image_url: "" };
 
 function Products() {
   const fn = useServerFn(listProducts);
@@ -77,7 +77,7 @@ function Products() {
   const edit = (p: any) => {
     setForm({
       id: p.id, name: p.name, description: p.description ?? "",
-      category_id: p.category_id ?? "", price: String(p.price), cost: String(p.cost),
+      category_id: p.category_id ?? "", price: String(p.price),
       stock_quantity: String(p.stock_quantity), low_stock_threshold: String(p.low_stock_threshold),
       image_url: p.image_url ?? "",
     });
@@ -91,11 +91,12 @@ function Products() {
         ...(form.id ? { id: form.id } : {}),
         name: form.name, description: form.description,
         category_id: form.category_id || null,
-        price: Number(form.price), cost: Number(form.cost),
+        price: Number(form.price),
         stock_quantity: Number(form.stock_quantity),
         low_stock_threshold: Number(form.low_stock_threshold),
         image_url: form.image_url || null,
       };
+
       await save({ data: payload });
       toast.success("Product saved");
       qc.invalidateQueries({ queryKey: ["products"] });
@@ -149,7 +150,6 @@ function Products() {
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1.5"><Label>Price</Label><Input type="number" step="0.01" min="0" required value={form.price} onChange={e => setForm({ ...form, price: e.target.value })} /></div>
-                    <div className="space-y-1.5"><Label>Cost</Label><Input type="number" step="0.01" min="0" required value={form.cost} onChange={e => setForm({ ...form, cost: e.target.value })} /></div>
                     <div className="space-y-1.5"><Label>Stock Qty</Label><Input type="number" min="0" required value={form.stock_quantity} onChange={e => setForm({ ...form, stock_quantity: e.target.value })} /></div>
                     <div className="space-y-1.5"><Label>Low Stock Alert</Label><Input type="number" min="0" required value={form.low_stock_threshold} onChange={e => setForm({ ...form, low_stock_threshold: e.target.value })} /></div>
                   </div>
@@ -176,8 +176,10 @@ function Products() {
                   <TableRow>
                     <TableHead>Image</TableHead>
                     <TableHead>Name</TableHead><TableHead>Category</TableHead>
-                    <TableHead className="text-right">Price</TableHead><TableHead className="text-right">Cost</TableHead>
-                    <TableHead className="text-right">Stock</TableHead><TableHead></TableHead>
+                    <TableHead className="text-right">Price</TableHead>
+                    {/* <TableHead className="text-right">Cost</TableHead> */}
+                    <TableHead className="text-right">Stock</TableHead>
+                    <TableHead className="text-right">Action</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -187,7 +189,7 @@ function Products() {
                       <TableCell className="font-medium">{p.name}</TableCell>
                       <TableCell>{p.categories?.name ?? "—"}</TableCell>
                       <TableCell className="text-right">{peso(p.price)}</TableCell>
-                      <TableCell className="text-right">{peso(p.cost)}</TableCell>
+                      {/* <TableCell className="text-right">{peso(p.cost)}</TableCell> */}
                       <TableCell className="text-right">{p.stock_quantity}</TableCell>
                       <TableCell className="text-right">
                         <Button size="icon" variant="ghost" onClick={() => edit(p)}><Pencil className="h-4 w-4" /></Button>

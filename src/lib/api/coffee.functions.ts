@@ -86,7 +86,6 @@ const productSchema = z.object({
   description: z.string().max(1000).optional().default(""),
   category_id: z.string().uuid().nullable(),
   price: z.number().min(0),
-  cost: z.number().min(0),
   stock_quantity: z.number().int().min(0),
   low_stock_threshold: z.number().int().min(0).default(10),
   image_url: z.string().max(2000).optional().nullable(),
