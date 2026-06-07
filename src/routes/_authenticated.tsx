@@ -33,7 +33,7 @@ function AuthLayout() {
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === "SIGNED_OUT") router.navigate({ to: "/login" });
+      if (event === "SIGNED_OUT") router.navigate({ to: "/login", search: {}, replace: true });
     });
     return () => subscription.unsubscribe();
   }, [router]);
