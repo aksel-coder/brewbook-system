@@ -22,8 +22,7 @@ export function AppSidebar({ isAdmin }: { isAdmin: boolean }) {
   const items = isAdmin ? [...nav, { title: "Users", url: "/users", icon: Users }] : nav;
 
   const signOut = async () => {
-    const { clearAllAuth } = await import("@/lib/offline/auth-offline");
-    await clearAllAuth();
+    await supabase.auth.signOut({ scope: "local" });
     toast.success("Signed out");
     window.location.replace("/login");
   };

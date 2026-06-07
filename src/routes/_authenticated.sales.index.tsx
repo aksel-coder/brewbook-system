@@ -2,8 +2,6 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { listProducts, createSale } from "@/lib/api/coffee.functions";
-import { checkoutSale, loadProducts } from "@/lib/offline/data-access";
-import { useOnlineStatus } from "@/hooks/use-online-status";
 import { useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -44,10 +42,9 @@ function SalesPOS() {
   const fn = useServerFn(listProducts);
   const createFn = useServerFn(createSale);
   const qc = useQueryClient();
-  const online = useOnlineStatus();
   const { data: products = [] } = useQuery({
-    queryKey: ["products", online],
-    queryFn: () => loadProducts(() => fn()),
+    queryKey: ["products"],
+    queryFn: () => fn(),
   });
   const [search, setSearch] = useState("");
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -84,24 +81,14 @@ function SalesPOS() {
     setBusy(true);
     try {
       const items = cart.map(c => ({ product_id: c.product_id, quantity: c.quantity, unit_price: c.price }));
-      const res = await checkoutSale(
-        (input) => createFn(input),
-        { items, tax_rate: 0.12 },
-      );
-      setReceipt({ ...res, items: cart, ts: new Date(), offline: res.offline });
+      const res = await createFn({ data: { items, tax_rate: 0.12 } });
+      setReceipt({ ...res, items: cart, ts: new Date() });
       setCart([]);
       qc.invalidateQueries({ queryKey: ["products"] });
-      qc.invalidateQueries({ queryKey: ["offline-pending"] });
-      if (!res.offline) {
-        qc.invalidateQueries({ queryKey: ["dashboard"] });
-        qc.invalidateQueries({ queryKey: ["sales"] });
-        qc.invalidateQueries({ queryKey: ["inventoryTxns"] });
-      }
-      toast.success(
-        res.offline
-          ? `Saved offline · ${res.sale.receipt_number}`
-          : `Sale recorded · ${res.sale.receipt_number}`,
-      );
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+      qc.invalidateQueries({ queryKey: ["sales"] });
+      qc.invalidateQueries({ queryKey: ["inventoryTxns"] });
+      toast.success(`Sale recorded · ${res.sale.receipt_number}`);
     } catch (e: any) { toast.error(e.message); }
     finally { setBusy(false); }
   };
@@ -111,9 +98,7 @@ function SalesPOS() {
       <div className="flex items-end justify-between gap-2">
         <div>
           <h1 className="font-display text-3xl font-bold">Point of Sale</h1>
-          <p className="text-sm text-muted-foreground">
-            {online ? "Select products to add to cart." : "Offline mode — using cached catalog."}
-          </p>
+          <p className="text-sm text-muted-foreground">Select products to add to cart.</p>
         </div>
       </div>
 
@@ -185,7 +170,6 @@ function SalesPOS() {
                 <div className="my-3 border-y border-dashed py-2 text-center text-xs">
                   <div>{receipt.sale.receipt_number}</div>
                   <div>{new Date(receipt.ts).toLocaleString()}</div>
-                  {receipt.offline && <div className="mt-1 font-semibold text-amber-700">OFFLINE — will sync when online</div>}
                 </div>
                 <table className="w-full text-xs">
                   <tbody>

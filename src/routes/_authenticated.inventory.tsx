@@ -2,7 +2,6 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { listProducts, adjustInventory, listInventoryTxns } from "@/lib/api/coffee.functions";
-import { loadInventoryTxns, loadProducts, mutateInventory } from "@/lib/offline/data-access";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
@@ -24,8 +23,8 @@ function Inventory() {
   const txnFn = useServerFn(listInventoryTxns);
   const adjust = useServerFn(adjustInventory);
   const qc = useQueryClient();
-  const { data: products = [] } = useQuery({ queryKey: ["products"], queryFn: () => loadProducts(() => fn()) });
-  const { data: txns = [] } = useQuery({ queryKey: ["inventoryTxns"], queryFn: () => loadInventoryTxns(() => txnFn()) });
+  const { data: products = [] } = useQuery({ queryKey: ["products"], queryFn: () => fn() });
+  const { data: txns = [] } = useQuery({ queryKey: ["inventoryTxns"], queryFn: () => txnFn() });
 
   const [open, setOpen] = useState(false);
   const [pid, setPid] = useState("");
@@ -36,12 +35,8 @@ function Inventory() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const res = await mutateInventory(
-        (input) => adjust(input),
-        { product_id: pid, quantity: Number(qty), transaction_type: type, reference: ref },
-      ) as any;
-      toast.success(res?.offline ? "Saved offline — will sync when online" : "Inventory updated");
-      qc.invalidateQueries({ queryKey: ["offline-pending"] });
+      await adjust({ data: { product_id: pid, quantity: Number(qty), transaction_type: type, reference: ref } });
+      toast.success("Inventory updated");
       qc.invalidateQueries({ queryKey: ["products"] });
       qc.invalidateQueries({ queryKey: ["inventoryTxns"] });
       qc.invalidateQueries({ queryKey: ["dashboard"] });

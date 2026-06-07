@@ -6,24 +6,14 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { getMyRole, claimFirstAdmin } from "@/lib/api/users.functions";
-import { loadMyRole, mutateClaimAdmin } from "@/lib/offline/data-access";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { ShieldCheck } from "lucide-react";
-import { OfflineIndicator } from "@/components/offline-indicator";
-import { useOfflineSync } from "@/hooks/use-offline-sync";
-import { isOfflineAuthActive } from "@/lib/offline/auth-offline";
-import { getSession } from "@/lib/offline/session";
 
 export const Route = createFileRoute("/_authenticated")({
   beforeLoad: async ({ location }) => {
     const { data } = await supabase.auth.getSession();
     if (data.session) return;
-
-    if (typeof window !== "undefined" && isOfflineAuthActive()) {
-      const session = await getSession();
-      if (session) return;
-    }
 
     throw redirect({
       to: "/login",
@@ -39,13 +29,12 @@ function AuthLayout() {
   const qc = useQueryClient();
   const fetchRole = useServerFn(getMyRole);
   const claim = useServerFn(claimFirstAdmin);
-  const { data: me, refetch } = useQuery({ queryKey: ["me"], queryFn: () => loadMyRole(() => fetchRole()) });
-  const { online, pendingCount, syncing } = useOfflineSync();
+  const { data: me, refetch } = useQuery({ queryKey: ["me"], queryFn: () => fetchRole() });
   const [claiming, setClaiming] = useState(false);
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === "SIGNED_OUT" && !isOfflineAuthActive()) {
+      if (event === "SIGNED_OUT") {
         router.navigate({ to: "/login", search: {}, replace: true });
       }
     });
@@ -55,10 +44,10 @@ function AuthLayout() {
   const handleClaim = async () => {
     setClaiming(true);
     try {
-      const res = await mutateClaimAdmin(() => claim()) as any;
-      toast.success(res?.offline ? "Admin claim saved offline — will sync when online" : "You are now an administrator");
-      qc.invalidateQueries({ queryKey: ["offline-pending"] });
+      await claim();
+      toast.success("You are now an administrator");
       refetch();
+      qc.invalidateQueries({ queryKey: ["me"] });
     } catch (e: any) {
       toast.error(e.message);
     } finally {
@@ -74,7 +63,6 @@ function AuthLayout() {
           <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b bg-card/80 px-4 backdrop-blur">
             <SidebarTrigger />
             <div className="flex-1" />
-            <OfflineIndicator online={online} pendingCount={pendingCount} syncing={syncing} />
             {me && !me.isAdmin && (
               <Button variant="outline" size="sm" onClick={handleClaim} disabled={claiming}>
                 <ShieldCheck className="mr-1 h-4 w-4" /> Claim admin (first-time setup)

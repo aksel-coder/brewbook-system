@@ -2,7 +2,6 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { getDashboardStats } from "@/lib/api/coffee.functions";
-import { loadDashboard, shouldUseLocalData } from "@/lib/offline/data-access";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
@@ -20,9 +19,8 @@ function Dashboard() {
   const fn = useServerFn(getDashboardStats);
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["dashboard"],
-    queryFn: () => loadDashboard(() => fn()),
+    queryFn: () => fn(),
     retry: (count, error) => {
-      if (shouldUseLocalData()) return false;
       if (count < 2 && error instanceof Error && error.message.toLowerCase().includes("unauthorized")) return true;
       return count < 1;
     },

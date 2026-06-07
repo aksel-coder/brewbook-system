@@ -2,7 +2,6 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { listSales, listProducts } from "@/lib/api/coffee.functions";
-import { loadProducts, loadSales } from "@/lib/offline/data-access";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -37,8 +36,8 @@ function downloadPDF(title: string, head: string[], body: (string | number)[][])
 function Reports() {
   const salesFn = useServerFn(listSales);
   const prodFn = useServerFn(listProducts);
-  const { data: sales = [] } = useQuery({ queryKey: ["sales"], queryFn: () => loadSales(() => salesFn()) });
-  const { data: products = [] } = useQuery({ queryKey: ["products"], queryFn: () => loadProducts(() => prodFn()) });
+  const { data: sales = [] } = useQuery({ queryKey: ["sales"], queryFn: () => salesFn() });
+  const { data: products = [] } = useQuery({ queryKey: ["products"], queryFn: () => prodFn() });
 
   const now = new Date();
   const buckets = useMemo(() => {

@@ -2,7 +2,6 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { listSales } from "@/lib/api/coffee.functions";
-import { loadSales } from "@/lib/offline/data-access";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
@@ -17,7 +16,7 @@ const peso = (n: number) => "₱" + Number(n).toLocaleString("en-PH", { minimumF
 
 function History() {
   const fn = useServerFn(listSales);
-  const { data = [], isLoading } = useQuery({ queryKey: ["sales"], queryFn: () => loadSales(() => fn()) });
+  const { data = [], isLoading } = useQuery({ queryKey: ["sales"], queryFn: () => fn() });
   const [q, setQ] = useState("");
   const filtered = useMemo(() => (data as any[]).filter(s => s.receipt_number.toLowerCase().includes(q.toLowerCase())), [data, q]);
 
