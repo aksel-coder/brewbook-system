@@ -8,9 +8,26 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Plus, Minus, Trash2, Search, Printer, X } from "lucide-react";
+import { Plus, Minus, Trash2, Search, Printer, X, ImageIcon } from "lucide-react";
 import { toast } from "sonner";
+import { useEffect } from "react";
+import { supabase } from "@/integrations/supabase/client";
 import logo from "@/assets/coffee-zone-logo.jpg.asset.json";
+
+function ProductImage({ path, className }: { path?: string | null; className?: string }) {
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    if (!path) { setUrl(null); return; }
+    if (/^https?:\/\//.test(path)) { setUrl(path); return; }
+    supabase.storage.from("product-images").createSignedUrl(path, 3600).then(({ data }) => {
+      if (!cancelled) setUrl(data?.signedUrl ?? null);
+    });
+    return () => { cancelled = true; };
+  }, [path]);
+  if (!url) return <div className={`flex items-center justify-center bg-secondary text-muted-foreground ${className ?? ""}`}><ImageIcon className="h-6 w-6" /></div>;
+  return <img src={url} alt="" className={`object-cover ${className ?? ""}`} />;
+}
 
 export const Route = createFileRoute("/_authenticated/sales/")({
   head: () => ({ meta: [{ title: "POS — Coffee Zone" }] }),
@@ -94,7 +111,7 @@ function SalesPOS() {
             {filtered.map((p: any) => (
               <button key={p.id} onClick={() => addToCart(p)} disabled={p.stock_quantity === 0}
                 className="group rounded-xl border bg-card p-4 text-left transition hover:border-primary hover:shadow-md disabled:opacity-40">
-                <div className="flex h-16 items-center justify-center rounded-md bg-secondary text-2xl">☕</div>
+                <ProductImage path={p.image_url} className="h-20 w-full rounded-md" />
                 <div className="mt-3 font-medium">{p.name}</div>
                 <div className="text-xs text-muted-foreground">{p.categories?.name}</div>
                 <div className="mt-2 flex items-center justify-between">
