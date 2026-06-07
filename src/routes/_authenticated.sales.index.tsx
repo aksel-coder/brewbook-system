@@ -83,17 +83,25 @@ function SalesPOS() {
     if (cart.length === 0) return;
     setBusy(true);
     try {
-      const res = await createFn({ data: {
-        items: cart.map(c => ({ product_id: c.product_id, quantity: c.quantity, unit_price: c.price })),
-        tax_rate: 0.12,
-      }});
-      setReceipt({ ...res, items: cart, ts: new Date() });
+      const items = cart.map(c => ({ product_id: c.product_id, quantity: c.quantity, unit_price: c.price }));
+      const res = await checkoutSale(
+        (input) => createFn(input),
+        { items, tax_rate: 0.12 },
+      );
+      setReceipt({ ...res, items: cart, ts: new Date(), offline: res.offline });
       setCart([]);
       qc.invalidateQueries({ queryKey: ["products"] });
-      qc.invalidateQueries({ queryKey: ["dashboard"] });
-      qc.invalidateQueries({ queryKey: ["sales"] });
-      qc.invalidateQueries({ queryKey: ["inventoryTxns"] });
-      toast.success(`Sale recorded · ${res.sale.receipt_number}`);
+      qc.invalidateQueries({ queryKey: ["offline-pending"] });
+      if (!res.offline) {
+        qc.invalidateQueries({ queryKey: ["dashboard"] });
+        qc.invalidateQueries({ queryKey: ["sales"] });
+        qc.invalidateQueries({ queryKey: ["inventoryTxns"] });
+      }
+      toast.success(
+        res.offline
+          ? `Saved offline · ${res.sale.receipt_number}`
+          : `Sale recorded · ${res.sale.receipt_number}`,
+      );
     } catch (e: any) { toast.error(e.message); }
     finally { setBusy(false); }
   };

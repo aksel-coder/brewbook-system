@@ -22,6 +22,7 @@ import {
 } from "@/lib/api/users.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { restoreOnlineSessionFromCredentials } from "@/lib/offline/auth-offline";
+import { hasValidSupabaseSession } from "@/lib/offline/session-auth";
 import { fullSync, getTotalPendingCount } from "@/lib/offline/sync";
 import { useOnlineStatus } from "./use-online-status";
 import { toast } from "sonner";
@@ -63,6 +64,8 @@ export function useOfflineSync() {
       setSyncing(true);
       try {
         await restoreOnlineSessionFromCredentials();
+        if (!(await hasValidSupabaseSession())) return;
+
         const { data: auth } = await supabase.auth.getUser();
         const { synced, failed } = await fullSync({
           createSale: (input) => createSaleFn(input),
