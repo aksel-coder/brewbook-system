@@ -74,7 +74,7 @@ function LandingPage() {
       <header className="sticky top-0 z-40 border-b border-border/60 bg-background/80 backdrop-blur">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4">
           <Link to="/" className="flex items-center gap-2">
-            <img src={logo.url} alt="Coffee Zone" className="h-9 w-9 rounded-full" />
+            <img src="/coffeLogo.jpg" alt="Coffee Zone" className="h-9 w-9 rounded-full" />
             <span className="font-display text-lg font-bold">Coffee Zone</span>
           </Link>
           <nav className="hidden items-center gap-8 text-sm text-muted-foreground md:flex">
@@ -134,7 +134,7 @@ function LandingPage() {
               <div className="absolute -inset-6 rounded-3xl bg-gradient-to-tr from-primary/20 to-transparent blur-2xl" />
               <div className="relative rounded-3xl border border-border/60 bg-card p-6 shadow-2xl">
                 <div className="flex items-center gap-3 border-b border-border/60 pb-4">
-                  <img src={logo.url} alt="" className="h-12 w-12 rounded-full" />
+                  <img src="/coffeLogo.jpg" alt="" className="h-12 w-12 rounded-full" />
                   <div>
                     <p className="font-semibold">Today's Sales</p>
                     <p className="text-xs text-muted-foreground">Live overview</p>
@@ -263,7 +263,7 @@ function LandingPage() {
       <footer className="border-t border-border/60 py-8">
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 px-4 text-sm text-muted-foreground md:flex-row">
           <div className="flex items-center gap-2">
-            <img src={logo.url} alt="" className="h-6 w-6 rounded-full" />
+            <img src="/coffeLogo.jpg" alt="" className="h-6 w-6 rounded-full" />
             <span>© {new Date().getFullYear()} Coffee Zone. All rights reserved.</span>
           </div>
           <div className="flex gap-5">

@@ -31,7 +31,7 @@ export function AppSidebar({ isAdmin }: { isAdmin: boolean }) {
     <Sidebar collapsible="icon">
       <SidebarHeader className="border-b border-sidebar-border">
         <div className="flex items-center gap-3 px-2 py-3">
-          <img src={logo.url} alt="Coffee Zone" className="h-10 w-10 rounded-full bg-white object-cover" />
+          <img src="/coffeLogo.jpg" alt="Coffee Zone" className="h-10 w-10 rounded-full bg-white object-cover" />
           <div className="group-data-[collapsible=icon]:hidden">
             <div className="font-display text-lg font-bold leading-tight text-sidebar-foreground">Coffee Zone</div>
             <div className="text-xs text-sidebar-foreground/70">Sales & Inventory</div>

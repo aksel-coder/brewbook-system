@@ -81,7 +81,7 @@ function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-background via-secondary to-background p-4">
       <div className="w-full max-w-md">
         <div className="mb-6 flex flex-col items-center text-center">
-          <img src={logo.url} alt="Coffee Zone" className="h-24 w-24 rounded-full bg-white shadow-lg" />
+          <img src="/coffeLogo.jpg" alt="Coffee Zone" className="h-24 w-24 rounded-full bg-white shadow-lg" />
           <h1 className="mt-4 font-display text-3xl font-bold">Coffee Zone</h1>
           <p className="text-sm text-muted-foreground">Sales & Inventory Management</p>
         </div>
