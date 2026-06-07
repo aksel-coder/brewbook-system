@@ -9,6 +9,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import logo from "@/assets/coffee-zone-logo.jpg.asset.json";
 
+type LoginSearch = { redirect?: string };
+
 const safeRedirect = (value: unknown) => {
   if (typeof value !== "string" || !value.startsWith("/") || value.startsWith("//") || value === "/login") {
     return "/dashboard";
@@ -17,12 +19,13 @@ const safeRedirect = (value: unknown) => {
 };
 
 export const Route = createFileRoute("/login")({
-  validateSearch: (search) => ({
-    redirect: typeof search.redirect === "string" ? search.redirect : undefined,
-  }),
-  beforeLoad: async () => {
+  validateSearch: (search): LoginSearch => {
+    const redirect = typeof search.redirect === "string" ? search.redirect : undefined;
+    return redirect ? { redirect } : {};
+  },
+  beforeLoad: async ({ search }) => {
     const { data } = await supabase.auth.getSession();
-    if (data.session) throw redirect({ to: safeRedirect(window.location.search ? new URLSearchParams(window.location.search).get("redirect") : undefined) as any, replace: true });
+    if (data.session) throw redirect({ to: safeRedirect(search.redirect) as any, replace: true });
   },
   head: () => ({ meta: [{ title: "Sign in — Coffee Zone" }] }),
   component: LoginPage,
