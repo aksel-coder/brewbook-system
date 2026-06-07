@@ -23,7 +23,6 @@ import {
   getLocalSalesWithItems,
   getLocalUsers,
 } from "./local-data";
-import { isOfflineAuthActive } from "./auth-offline";
 import { getSession, saveSession } from "./session";
 import { pullAllDataToIndexedDB } from "./pull";
 import { put, remove, replaceAll } from "./stores";
@@ -40,7 +39,9 @@ export function isBrowserOnline() {
 }
 
 export function shouldUseLocalData() {
-  return isClient() && (!navigator.onLine || isOfflineAuthActive());
+  // Only skip the server when the browser reports offline.
+  // A stale offline-auth flag must not block live Supabase reads while online.
+  return isClient() && !navigator.onLine;
 }
 
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
@@ -76,7 +77,14 @@ function shouldFallbackToOffline(error: unknown) {
   if (error instanceof TypeError) return true;
   if (error instanceof Error) {
     const message = error.message.toLowerCase();
-    return message.includes("fetch") || message.includes("network") || message.includes("failed to fetch");
+    return (
+      message.includes("fetch")
+      || message.includes("network")
+      || message.includes("failed to fetch")
+      || message.includes("unauthorized")
+      || message.includes("timed out")
+      || message.includes("missing supabase")
+    );
   }
   return false;
 }
@@ -177,7 +185,16 @@ export async function loadInventoryTxns(listFn: () => Promise<unknown[]>) {
 }
 
 export async function loadDashboard(statsFn: () => Promise<unknown>) {
-  return tryOnline(statsFn, computeLocalDashboard);
+  if (shouldUseLocalData()) return computeLocalDashboard();
+  try {
+    return await withTimeout(statsFn(), SERVER_TIMEOUT_MS);
+  } catch (error) {
+    try {
+      return await computeLocalDashboard();
+    } catch {
+      throw error;
+    }
+  }
 }
 
 export async function loadUsers(listFn: () => Promise<unknown[]>) {

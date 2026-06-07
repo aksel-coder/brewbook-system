@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import logo from "@/assets/coffee-zone-logo.jpg.asset.json";
-import { isAppAuthenticated, tryOfflineLogin } from "@/lib/offline/auth-offline";
+import { deactivateOfflineAuth, isAppAuthenticated, tryOfflineLogin } from "@/lib/offline/auth-offline";
 import { saveCredential } from "@/lib/offline/credentials";
 import { bootstrapDataPull } from "@/lib/offline/bootstrap";
 import { useOnlineStatus } from "@/hooks/use-online-status";
@@ -36,12 +36,9 @@ export const Route = createFileRoute("/login")({
     return redirectTo ? { redirect: redirectTo } : {};
   },
   beforeLoad: async ({ search }) => {
-    const { data } = await supabase.auth.getSession();
-    if (data.session) throw redirect({ to: safeRedirect(search.redirect) as any, replace: true });
-
-    if (typeof window !== "undefined" && isOfflineAuthActive()) {
-      const session = await getSession();
-      if (session) throw redirect({ to: safeRedirect(search.redirect) as any, replace: true });
+    if (typeof window === "undefined") return;
+    if (await isAppAuthenticated()) {
+      throw redirect({ to: safeRedirect(search.redirect) as any, replace: true });
     }
   },
   head: () => ({ meta: [{ title: "Sign in — Coffee Zone" }] }),
@@ -70,7 +67,17 @@ function LoginPage() {
       if (online) {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) return toast.error(error.message);
+        deactivateOfflineAuth();
         await saveCredential({ email, password });
+        await bootstrapDataPull({
+          listProducts: () => listProductsFn(),
+          listCategories: () => listCategoriesFn(),
+          listSales: () => listSalesFn(),
+          listInventoryTxns: () => listInventoryFn(),
+          getMyRole: () => getMyRoleFn(),
+          listUsers: () => listUsersFn(),
+          getUserEmail: () => email,
+        });
         toast.success("Welcome back!");
       } else {
         const ok = await tryOfflineLogin(email, password);
@@ -100,6 +107,7 @@ function LoginPage() {
       const { error: signInErr } = await supabase.auth.signInWithPassword({ email, password });
       if (signInErr) return toast.error(signInErr.message);
 
+      deactivateOfflineAuth();
       await saveCredential({ email, password, fullName });
       await bootstrapDataPull({
         listProducts: () => listProductsFn(),

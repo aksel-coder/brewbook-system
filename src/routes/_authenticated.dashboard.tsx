@@ -18,18 +18,23 @@ const peso = (n: number) => "₱" + Number(n).toLocaleString("en-PH", { minimumF
 
 function Dashboard() {
   const fn = useServerFn(getDashboardStats);
-  const { data, isLoading, isError } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["dashboard"],
     queryFn: () => loadDashboard(() => fn()),
-    retry: (count) => (shouldUseLocalData() ? false : count < 1),
+    retry: (count, error) => {
+      if (shouldUseLocalData()) return false;
+      if (count < 2 && error instanceof Error && error.message.toLowerCase().includes("unauthorized")) return true;
+      return count < 1;
+    },
   });
 
   if (isLoading) return <div className="grid gap-4 md:grid-cols-4">{[...Array(4)].map((_, i) => <Skeleton key={i} className="h-28" />)}</div>;
 
   if (isError || !data) {
     return (
-      <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
-        Could not load dashboard data. Sign in online once to cache your shop data for offline use.
+      <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground space-y-3">
+        <p>Could not load dashboard data. Check your connection and try again.</p>
+        <button type="button" className="text-primary underline" onClick={() => refetch()}>Retry</button>
       </div>
     );
   }
