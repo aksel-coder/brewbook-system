@@ -9,10 +9,20 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import logo from "@/assets/coffee-zone-logo.jpg.asset.json";
 
+const safeRedirect = (value: unknown) => {
+  if (typeof value !== "string" || !value.startsWith("/") || value.startsWith("//") || value === "/login") {
+    return "/dashboard";
+  }
+  return value;
+};
+
 export const Route = createFileRoute("/login")({
+  validateSearch: (search) => ({
+    redirect: typeof search.redirect === "string" ? search.redirect : undefined,
+  }),
   beforeLoad: async () => {
     const { data } = await supabase.auth.getSession();
-    if (data.session) throw redirect({ to: "/dashboard" as any });
+    if (data.session) throw redirect({ to: safeRedirect(window.location.search ? new URLSearchParams(window.location.search).get("redirect") : undefined) as any, replace: true });
   },
   head: () => ({ meta: [{ title: "Sign in — Coffee Zone" }] }),
   component: LoginPage,
@@ -20,6 +30,7 @@ export const Route = createFileRoute("/login")({
 
 function LoginPage() {
   const navigate = useNavigate();
+  const search = Route.useSearch();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
@@ -32,7 +43,7 @@ function LoginPage() {
     setLoading(false);
     if (error) return toast.error(error.message);
     toast.success("Welcome back!");
-    navigate({ to: "/" });
+    navigate({ to: safeRedirect(search.redirect) as any, replace: true });
   };
 
   const signUp = async (e: React.FormEvent) => {
@@ -47,7 +58,7 @@ function LoginPage() {
     toast.success("Account created — signing you in");
     const { error: signInErr } = await supabase.auth.signInWithPassword({ email, password });
     if (signInErr) return toast.error(signInErr.message);
-    navigate({ to: "/" });
+    navigate({ to: safeRedirect(search.redirect) as any, replace: true });
   };
 
   return (
