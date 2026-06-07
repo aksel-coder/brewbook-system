@@ -11,10 +11,14 @@ import { toast } from "sonner";
 import { ShieldCheck } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated")({
-  beforeLoad: async () => {
+  beforeLoad: async ({ location }) => {
     const { data } = await supabase.auth.getSession();
     if (!data.session) {
-      throw redirect({ to: "/login" });
+      throw redirect({
+        to: "/login",
+        search: { redirect: location.href } as any,
+        replace: true,
+      });
     }
   },
   component: AuthLayout,
@@ -29,7 +33,7 @@ function AuthLayout() {
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === "SIGNED_OUT") router.navigate({ to: "/login" });
+      if (event === "SIGNED_OUT") router.navigate({ to: "/login", search: {}, replace: true });
     });
     return () => subscription.unsubscribe();
   }, [router]);

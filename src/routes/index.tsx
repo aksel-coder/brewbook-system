@@ -84,10 +84,10 @@ function LandingPage() {
           </nav>
           <div className="flex items-center gap-2">
             <Button asChild variant="ghost" size="sm">
-              <Link to="/login">Sign in</Link>
+              <Link to="/login" search={{}}>Sign in</Link>
             </Button>
             <Button asChild size="sm">
-              <Link to="/login">Get started</Link>
+              <Link to="/login" search={{}}>Get started</Link>
             </Button>
           </div>
         </div>
@@ -114,7 +114,7 @@ function LandingPage() {
               </p>
               <div className="mt-8 flex flex-wrap gap-3">
                 <Button asChild size="lg">
-                  <Link to="/login">
+                  <Link to="/login" search={{}}>
                     Open the dashboard <ArrowRight className="ml-1 h-4 w-4" />
                   </Link>
                 </Button>
@@ -251,7 +251,7 @@ function LandingPage() {
               </p>
             </div>
             <Button asChild size="lg" variant="secondary" className="w-fit">
-              <Link to="/login">
+              <Link to="/login" search={{}}>
                 Sign in <ArrowRight className="ml-1 h-4 w-4" />
               </Link>
             </Button>
@@ -269,7 +269,7 @@ function LandingPage() {
           <div className="flex gap-5">
             <a href="#features" className="hover:text-foreground">Features</a>
             <a href="#workflow" className="hover:text-foreground">Workflow</a>
-            <Link to="/login" className="hover:text-foreground">Sign in</Link>
+            <Link to="/login" search={{}} className="hover:text-foreground">Sign in</Link>
           </div>
         </div>
       </footer>
