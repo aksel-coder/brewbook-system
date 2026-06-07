@@ -111,7 +111,7 @@ function SalesPOS() {
             {filtered.map((p: any) => (
               <button key={p.id} onClick={() => addToCart(p)} disabled={p.stock_quantity === 0}
                 className="group rounded-xl border bg-card p-4 text-left transition hover:border-primary hover:shadow-md disabled:opacity-40">
-                <div className="flex h-16 items-center justify-center rounded-md bg-secondary text-2xl">☕</div>
+                <ProductImage path={p.image_url} className="h-20 w-full rounded-md" />
                 <div className="mt-3 font-medium">{p.name}</div>
                 <div className="text-xs text-muted-foreground">{p.categories?.name}</div>
                 <div className="mt-2 flex items-center justify-between">
