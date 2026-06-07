@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { listProducts, listCategories, upsertProduct, deleteProduct, upsertCategory, deleteCategory } from "@/lib/api/coffee.functions";
+import { loadCategories, loadProducts, mutateCategory, mutateProduct } from "@/lib/offline/data-access";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
@@ -49,8 +50,8 @@ function Products() {
   const delCat = useServerFn(deleteCategory);
   const qc = useQueryClient();
 
-  const { data: products = [] } = useQuery({ queryKey: ["products"], queryFn: () => fn() });
-  const { data: categories = [] } = useQuery({ queryKey: ["categories"], queryFn: () => catFn() });
+  const { data: products = [] } = useQuery({ queryKey: ["products"], queryFn: () => loadProducts(() => fn()) });
+  const { data: categories = [] } = useQuery({ queryKey: ["categories"], queryFn: () => loadCategories(() => catFn()) });
 
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(blank);
@@ -87,7 +88,7 @@ function Products() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await save({ data: {
+      const payload = {
         ...(form.id ? { id: form.id } : {}),
         name: form.name, description: form.description,
         category_id: form.category_id || null,
@@ -95,21 +96,34 @@ function Products() {
         stock_quantity: Number(form.stock_quantity),
         low_stock_threshold: Number(form.low_stock_threshold),
         image_url: form.image_url || null,
-      }});
-      toast.success("Product saved");
+      };
+      const res = await mutateProduct((input) => save(input), payload, "upsert") as any;
+      toast.success(res?.offline ? "Saved offline — will sync when online" : "Product saved");
+      qc.invalidateQueries({ queryKey: ["offline-pending"] });
       qc.invalidateQueries({ queryKey: ["products"] });
       setOpen(false); setForm(blank);
     } catch (e: any) { toast.error(e.message); }
   };
 
   const remove = async (id: string) => {
-    try { await del({ data: { id } }); toast.success("Deleted"); qc.invalidateQueries({ queryKey: ["products"] }); }
+    try {
+      const res = await mutateProduct((input) => del(input), { id }, "delete") as any;
+      toast.success(res?.offline ? "Deleted offline — will sync when online" : "Deleted");
+      qc.invalidateQueries({ queryKey: ["products"] });
+      qc.invalidateQueries({ queryKey: ["offline-pending"] });
+    }
     catch (e: any) { toast.error(e.message); }
   };
 
   const addCat = async (e: React.FormEvent) => {
     e.preventDefault();
-    try { await saveCat({ data: { name: catName } }); toast.success("Category added"); setCatName(""); qc.invalidateQueries({ queryKey: ["categories"] }); }
+    try {
+      const res = await mutateCategory((input) => saveCat(input), { name: catName }, "upsert") as any;
+      toast.success(res?.offline ? "Saved offline — will sync when online" : "Category added");
+      setCatName("");
+      qc.invalidateQueries({ queryKey: ["categories"] });
+      qc.invalidateQueries({ queryKey: ["offline-pending"] });
+    }
     catch (e: any) { toast.error(e.message); }
   };
 
@@ -208,7 +222,7 @@ function Products() {
                 {(categories as any[]).map(c => (
                   <li key={c.id} className="flex items-center justify-between py-2">
                     <span>{c.name}</span>
-                    <Button size="icon" variant="ghost" className="text-destructive" onClick={async () => { try { await delCat({ data: { id: c.id } }); toast.success("Deleted"); qc.invalidateQueries({ queryKey: ["categories"] }); } catch (e: any) { toast.error(e.message); } }}><Trash2 className="h-4 w-4" /></Button>
+                    <Button size="icon" variant="ghost" className="text-destructive" onClick={async () => { try { const res = await mutateCategory((input) => delCat(input), { id: c.id }, "delete") as any; toast.success(res?.offline ? "Deleted offline — will sync when online" : "Deleted"); qc.invalidateQueries({ queryKey: ["categories"] }); qc.invalidateQueries({ queryKey: ["offline-pending"] }); } catch (e: any) { toast.error(e.message); } }}><Trash2 className="h-4 w-4" /></Button>
                   </li>
                 ))}
               </ul>

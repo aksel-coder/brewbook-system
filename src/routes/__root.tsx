@@ -11,6 +11,7 @@ import { useEffect, type ReactNode } from "react";
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { supabase } from "@/integrations/supabase/client";
+import { shouldUseLocalData } from "@/lib/offline/data-access";
 import { Toaster } from "@/components/ui/sonner";
 
 function NotFoundComponent() {
@@ -79,6 +80,7 @@ function AuthInvalidator() {
       // INITIAL_SESSION and TOKEN_REFRESHED fire on every getUser() call and
       // would cause an infinite invalidate → beforeLoad → getUser loop.
       if (event === "SIGNED_IN" || event === "SIGNED_OUT" || event === "USER_UPDATED") {
+        if (shouldUseLocalData()) return;
         router.invalidate();
         qc.invalidateQueries();
       }

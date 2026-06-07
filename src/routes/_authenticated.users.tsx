@@ -2,6 +2,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { listUsers, createUser, updateUserRole, deleteUser } from "@/lib/api/users.functions";
+import { loadUsers, mutateDeleteUser, mutateUserRole } from "@/lib/offline/data-access";
+import { useOnlineStatus } from "@/hooks/use-online-status";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
@@ -26,23 +28,35 @@ function Users() {
   const roleFn = useServerFn(updateUserRole);
   const delFn = useServerFn(deleteUser);
   const qc = useQueryClient();
-  const { data = [], isLoading, error } = useQuery({ queryKey: ["users"], queryFn: () => fn() });
+  const online = useOnlineStatus();
+  const { data = [], isLoading, error } = useQuery({ queryKey: ["users"], queryFn: () => loadUsers(() => fn()) });
 
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ email: "", password: "", full_name: "", role: "cashier" as "admin" | "cashier" });
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!online) return toast.error("Creating users requires an internet connection.");
     try { await createFn({ data: form }); toast.success("User created"); setOpen(false);
       setForm({ email: "", password: "", full_name: "", role: "cashier" }); qc.invalidateQueries({ queryKey: ["users"] }); }
     catch (e: any) { toast.error(e.message); }
   };
   const setRole = async (user_id: string, role: "admin" | "cashier") => {
-    try { await roleFn({ data: { user_id, role } }); toast.success("Role updated"); qc.invalidateQueries({ queryKey: ["users"] }); }
+    try {
+      const res = await mutateUserRole((input) => roleFn(input), { user_id, role }) as any;
+      toast.success(res?.offline ? "Saved offline — will sync when online" : "Role updated");
+      qc.invalidateQueries({ queryKey: ["users"] });
+      qc.invalidateQueries({ queryKey: ["offline-pending"] });
+    }
     catch (e: any) { toast.error(e.message); }
   };
   const remove = async (user_id: string) => {
-    try { await delFn({ data: { user_id } }); toast.success("User deleted"); qc.invalidateQueries({ queryKey: ["users"] }); }
+    try {
+      const res = await mutateDeleteUser((input) => delFn(input), { user_id }) as any;
+      toast.success(res?.offline ? "Deleted offline — will sync when online" : "User deleted");
+      qc.invalidateQueries({ queryKey: ["users"] });
+      qc.invalidateQueries({ queryKey: ["offline-pending"] });
+    }
     catch (e: any) { toast.error(e.message); }
   };
 

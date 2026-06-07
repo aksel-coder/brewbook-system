@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { getDashboardStats } from "@/lib/api/coffee.functions";
+import { loadDashboard, shouldUseLocalData } from "@/lib/offline/data-access";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
@@ -17,9 +18,21 @@ const peso = (n: number) => "₱" + Number(n).toLocaleString("en-PH", { minimumF
 
 function Dashboard() {
   const fn = useServerFn(getDashboardStats);
-  const { data, isLoading } = useQuery({ queryKey: ["dashboard"], queryFn: () => fn() });
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ["dashboard"],
+    queryFn: () => loadDashboard(() => fn()),
+    retry: (count) => (shouldUseLocalData() ? false : count < 1),
+  });
 
-  if (isLoading || !data) return <div className="grid gap-4 md:grid-cols-4">{[...Array(4)].map((_, i) => <Skeleton key={i} className="h-28" />)}</div>;
+  if (isLoading) return <div className="grid gap-4 md:grid-cols-4">{[...Array(4)].map((_, i) => <Skeleton key={i} className="h-28" />)}</div>;
+
+  if (isError || !data) {
+    return (
+      <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
+        Could not load dashboard data. Sign in online once to cache your shop data for offline use.
+      </div>
+    );
+  }
 
   const kpis = [
     { label: "Total Sales", value: peso(data.totalSales), icon: Coins, hint: `Today: ${peso(data.todaySales)}` },

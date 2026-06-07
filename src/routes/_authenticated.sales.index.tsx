@@ -2,6 +2,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { listProducts, createSale } from "@/lib/api/coffee.functions";
+import { checkoutSale, loadProducts } from "@/lib/offline/data-access";
+import { useOnlineStatus } from "@/hooks/use-online-status";
 import { useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -42,7 +44,11 @@ function SalesPOS() {
   const fn = useServerFn(listProducts);
   const createFn = useServerFn(createSale);
   const qc = useQueryClient();
-  const { data: products = [] } = useQuery({ queryKey: ["products"], queryFn: () => fn() });
+  const online = useOnlineStatus();
+  const { data: products = [] } = useQuery({
+    queryKey: ["products", online],
+    queryFn: () => loadProducts(() => fn()),
+  });
   const [search, setSearch] = useState("");
   const [cart, setCart] = useState<CartItem[]>([]);
   const [receipt, setReceipt] = useState<any>(null);
@@ -97,7 +103,9 @@ function SalesPOS() {
       <div className="flex items-end justify-between gap-2">
         <div>
           <h1 className="font-display text-3xl font-bold">Point of Sale</h1>
-          <p className="text-sm text-muted-foreground">Select products to add to cart.</p>
+          <p className="text-sm text-muted-foreground">
+            {online ? "Select products to add to cart." : "Offline mode — using cached catalog."}
+          </p>
         </div>
       </div>
 
@@ -169,6 +177,7 @@ function SalesPOS() {
                 <div className="my-3 border-y border-dashed py-2 text-center text-xs">
                   <div>{receipt.sale.receipt_number}</div>
                   <div>{new Date(receipt.ts).toLocaleString()}</div>
+                  {receipt.offline && <div className="mt-1 font-semibold text-amber-700">OFFLINE — will sync when online</div>}
                 </div>
                 <table className="w-full text-xs">
                   <tbody>
