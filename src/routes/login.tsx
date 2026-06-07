@@ -46,8 +46,9 @@ function LoginPage() {
     e.preventDefault();
     setLoading(true);
     try {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) return toast.error(error.message);
+      if (!data.session) return toast.error("Could not establish a session. Please try again.");
       toast.success("Welcome back!");
       navigate({ to: safeRedirect(search.redirect) as any, replace: true });
     } finally {

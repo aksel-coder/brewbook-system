@@ -18,6 +18,10 @@ export const getDashboardStats = createServerFn({ method: "GET" })
       supabase.from("sales").select("total_amount, sale_date").gte("sale_date", new Date(Date.now() - 7 * 86400000).toISOString()),
     ]);
 
+    for (const result of [salesAll, salesToday, products, lowStock, recent, bestSellers, last7]) {
+      if (result.error) throw new Error(result.error.message);
+    }
+
     const totalSales = (salesAll.data ?? []).reduce((s, r) => s + Number(r.total_amount), 0);
     const todaySales = (salesToday.data ?? []).reduce((s, r) => s + Number(r.total_amount), 0);
     const totalProducts = products.data?.length ?? 0;

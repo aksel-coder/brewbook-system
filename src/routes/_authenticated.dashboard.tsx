@@ -17,11 +17,11 @@ const peso = (n: number) => "₱" + Number(n).toLocaleString("en-PH", { minimumF
 
 function Dashboard() {
   const fn = useServerFn(getDashboardStats);
-  const { data, isLoading, isError, refetch } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["dashboard"],
     queryFn: () => fn(),
-    retry: (count, error) => {
-      if (count < 2 && error instanceof Error && error.message.toLowerCase().includes("unauthorized")) return true;
+    retry: (count, err) => {
+      if (count < 2 && err instanceof Error && err.message.toLowerCase().includes("unauthorized")) return true;
       return count < 1;
     },
   });
@@ -32,6 +32,9 @@ function Dashboard() {
     return (
       <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground space-y-3">
         <p>Could not load dashboard data. Check your connection and try again.</p>
+        {error instanceof Error && error.message && (
+          <p className="text-xs text-destructive/80">{error.message}</p>
+        )}
         <button type="button" className="text-primary underline" onClick={() => refetch()}>Retry</button>
       </div>
     );
