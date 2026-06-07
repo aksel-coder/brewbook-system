@@ -33,7 +33,6 @@ function Users() {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!online) return toast.error("Creating users requires an internet connection.");
     try { await createFn({ data: form }); toast.success("User created"); setOpen(false);
       setForm({ email: "", password: "", full_name: "", role: "cashier" }); qc.invalidateQueries({ queryKey: ["users"] }); }
     catch (e: any) { toast.error(e.message); }
