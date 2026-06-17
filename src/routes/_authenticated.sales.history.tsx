@@ -32,7 +32,7 @@ function History() {
   const handlePrint = () => {
     printTable(
       "Sales History",
-      ["Receipt", "Date", "Items", "Subtotal", "Tax", "Total"],
+      ["Receipt", "Date", "Items", "Subtotal", "Total"],
       filtered.map((s: any) => [
         s.receipt_number,
         new Date(s.sale_date).toLocaleString(),
@@ -65,7 +65,6 @@ function History() {
                 <TableHead>Date</TableHead>
                 <TableHead>Items</TableHead>
                 <TableHead className="text-right">Subtotal</TableHead>
-                <TableHead className="text-right">Tax</TableHead>
                 <TableHead className="text-right">Total</TableHead>
               </TableRow>
             </TableHeader>
@@ -80,7 +79,6 @@ function History() {
                       {(s.sale_items ?? []).map((i: any) => `${i.quantity}× ${i.products?.name}`).join(", ")}
                     </TableCell>
                     <TableCell className="text-right">{peso(s.subtotal)}</TableCell>
-                    <TableCell className="text-right">{peso(s.tax)}</TableCell>
                     <TableCell className="text-right font-semibold">{peso(s.total_amount)}</TableCell>
                   </TableRow>
                 ))}

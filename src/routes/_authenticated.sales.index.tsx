@@ -146,7 +146,6 @@ function SalesPOS() {
               </ul>}
             <div className="space-y-1 border-t pt-3 text-sm">
               <div className="flex justify-between"><span>Subtotal</span><span>{peso(subtotal)}</span></div>
-              <div className="flex justify-between text-muted-foreground"><span>Tax (12%)</span><span>{peso(tax)}</span></div>
               <div className="flex justify-between font-display text-lg font-bold"><span>Total</span><span>{peso(total)}</span></div>
             </div>
             <Button className="w-full" size="lg" disabled={cart.length === 0 || busy} onClick={checkout}>
@@ -183,7 +182,6 @@ function SalesPOS() {
                 </table>
                 <div className="mt-3 space-y-0.5 border-t border-dashed pt-2 text-xs">
                   <div className="flex justify-between"><span>Subtotal</span><span>{peso(receipt.subtotal)}</span></div>
-                  <div className="flex justify-between"><span>Tax</span><span>{peso(receipt.tax)}</span></div>
                   <div className="flex justify-between font-bold"><span>TOTAL</span><span>{peso(receipt.total)}</span></div>
                 </div>
                 <div className="mt-3 text-center text-xs">Thank you! ☕</div>
