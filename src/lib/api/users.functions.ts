@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { hasSupabaseServiceRole, supabaseAdmin } from "@/integrations/supabase/client.server";
 
 async function requireAdmin(supabase: any, userId: string) {
   const { data, error } = await supabase.from("user_roles").select("role").eq("user_id", userId);
@@ -10,46 +10,94 @@ async function requireAdmin(supabase: any, userId: string) {
   if (!isAdmin) throw new Error("Forbidden: admin only");
 }
 
+// export const getMyRole = createServerFn({ method: "GET" })
+//   .middleware([requireSupabaseAuth])
+//   .handler(async ({ context }) => {
+//     const { supabase, userId } = context;
+//     const [{ data: roles }, { data: profile }] = await Promise.all([
+//       supabase.from("user_roles").select("role").eq("user_id", userId),
+//       supabase.from("profiles").select("full_name, username, email").eq("id", userId).single(),
+//     ]);
+//     const isAdmin = (roles ?? []).some((r: any) => r.role === "admin");
+//     console.log('rolessssssssssss: ', userId)
+//     return {
+//       userId,
+//       isAdmin,
+//       role: isAdmin ? "admin" : "cashier",
+//       fullName: profile?.full_name ?? "",
+//       username: profile?.username ?? "",
+//     };
+//   });
+
+
 export const getMyRole = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { supabase, userId } = context;
-    const [{ data: roles }, { data: profile }] = await Promise.all([
-      supabase.from("user_roles").select("role").eq("user_id", userId),
-      supabase.from("profiles").select("full_name, username").eq("id", userId).single(),
+
+    // 1. Fetch roles from the custom table and user data from the auth table concurrently
+    const [{ data: roles }, { data: authData, error: authError }] = await Promise.all([
+      supabase
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", userId),
+      supabaseAdmin.auth.admin.getUserById(userId)
     ]);
+
+    if (authError) {
+      console.error("Error fetching auth user:", authError.message);
+    }
+
     const isAdmin = (roles ?? []).some((r: any) => r.role === "admin");
+    
+    // 2. Safely extract user and metadata from the auth table response
+    const authUser = authData?.user;
+    const metadata = authUser?.user_metadata;
+
     return {
       userId,
       isAdmin,
       role: isAdmin ? "admin" : "cashier",
-      fullName: profile?.full_name ?? "",
-      username: profile?.username ?? "",
+      fullName: metadata?.full_name ?? "",
+      // Fallback to username metadata, then to email prefix, then to empty string
+      username: metadata?.username ?? authUser?.email?.split('@')[0] ?? "", 
     };
   });
 
-export const listUsers = createServerFn({ method: "GET" })
+
+  export const listUsers = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    await requireAdmin(context.supabase, context.userId);
-    const { data: profiles, error } = await supabaseAdmin
-      .from("profiles")
-      .select("id, full_name, username, created_at")
-      .order("created_at", { ascending: false });
-    if (error) throw new Error(error.message);
-    const { data: roles } = await supabaseAdmin.from("user_roles").select("user_id, role");
+    const { supabase, userId } = context;
+    
+    // 1. Still enforce admin check
+    await requireAdmin(supabase, userId);
+
+    // 2. Fetch directly from Auth via supabaseAdmin, and grab your app roles concurrently
+    const [{ data: authData, error: authError }, { data: roles, error: rolesError }] = await Promise.all([
+      supabaseAdmin.auth.admin.listUsers(),
+      supabase.from("user_roles").select("user_id, role"),
+    ]);
+
+    if (authError) throw new Error(authError.message);
+    if (rolesError) throw new Error(rolesError.message);
+
+    // 3. Map user roles into a fast lookup Map
     const roleMap = new Map<string, string[]>();
     for (const r of roles ?? []) {
       const arr = roleMap.get(r.user_id) ?? [];
       arr.push(r.role);
       roleMap.set(r.user_id, arr);
     }
-    const { data: authList } = await supabaseAdmin.auth.admin.listUsers();
-    const emails = new Map((authList?.users ?? []).map(u => [u.id, u.email]));
-    return (profiles ?? []).map(p => ({
-      ...p,
-      email: emails.get(p.id) ?? "",
-      roles: roleMap.get(p.id) ?? ["cashier"],
+
+    // 4. Transform the Auth system users so they match your exact component expectations
+    return (authData.users ?? []).map(u => ({
+      id: u.id,
+      email: u.email ?? "",
+      full_name: u.user_metadata?.full_name || "",
+      username: u.user_metadata?.username || u.email?.split('@')[0] || "",
+      created_at: u.created_at,
+      roles: roleMap.get(u.id) ?? ["cashier"], // Defaults to cashier if no role exists
     }));
   });
 
@@ -63,6 +111,12 @@ export const createUser = createServerFn({ method: "POST" })
   }).parse(d))
   .handler(async ({ data, context }) => {
     await requireAdmin(context.supabase, context.userId);
+    if (!hasSupabaseServiceRole()) {
+      throw new Error(
+        "Creating users requires SUPABASE_SERVICE_ROLE_KEY in .env. " +
+        "Supabase Dashboard → Settings → API → service_role (secret).",
+      );
+    }
     const { data: created, error } = await supabaseAdmin.auth.admin.createUser({
       email: data.email,
       password: data.password,
@@ -71,18 +125,27 @@ export const createUser = createServerFn({ method: "POST" })
     });
     if (error) throw new Error(error.message);
     if (data.role === "admin" && created.user) {
-      await supabaseAdmin.from("user_roles").upsert({ user_id: created.user.id, role: "admin" });
+      await context.supabase.from("user_roles").upsert({ user_id: created.user.id, role: "admin" });
     }
     return { ok: true };
   });
 
-export const updateUserRole = createServerFn({ method: "POST" })
+  export const updateUserRole = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d) => z.object({ user_id: z.string().uuid(), role: z.enum(["admin", "cashier"]) }).parse(d))
   .handler(async ({ data, context }) => {
-    await requireAdmin(context.supabase, context.userId);
-    await supabaseAdmin.from("user_roles").delete().eq("user_id", data.user_id);
-    await supabaseAdmin.from("user_roles").insert({ user_id: data.user_id, role: data.role });
+    const { supabase, userId } = context;
+    
+    // 1. Keep the security check using the user's token context
+    await requireAdmin(supabase, userId);
+    
+    // 2. Use supabaseAdmin to bypass RLS restrictions safely on the server side
+    const { error: delError } = await supabaseAdmin.from("user_roles").delete().eq("user_id", data.user_id);
+    if (delError) throw new Error(delError.message);
+    
+    const { error: insError } = await supabaseAdmin.from("user_roles").insert({ user_id: data.user_id, role: data.role });
+    if (insError) throw new Error(insError.message);
+    
     return { ok: true };
   });
 
@@ -90,20 +153,17 @@ export const deleteUser = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d) => z.object({ user_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
-    await requireAdmin(context.supabase, context.userId);
-    if (data.user_id === context.userId) throw new Error("Cannot delete yourself");
-    const { error } = await supabaseAdmin.auth.admin.deleteUser(data.user_id);
+    const { supabase, userId } = context;
+    await requireAdmin(supabase, userId);
+    const { error } = await supabase.rpc("admin_delete_user", { target_user_id: data.user_id });
     if (error) throw new Error(error.message);
     return { ok: true };
   });
 
-// First-time admin bootstrap (works only if no admins exist yet)
 export const claimFirstAdmin = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const { data: admins } = await supabaseAdmin.from("user_roles").select("user_id").eq("role", "admin").limit(1);
-    if ((admins ?? []).length > 0) throw new Error("An admin already exists");
-    const { error } = await supabaseAdmin.from("user_roles").upsert({ user_id: context.userId, role: "admin" });
+    const { error } = await context.supabase.rpc("claim_first_admin");
     if (error) throw new Error(error.message);
     return { ok: true };
   });

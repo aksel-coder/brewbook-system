@@ -33,3 +33,4 @@ dist-ssr
 *.sw?
 .env
 *.env
+supabase/scripts/create-user-*.sql

@@ -12,6 +12,9 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import logo from "@/assets/coffee-zone-logo.jpg.asset.json";
+import { useQuery } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
+import { getDashboardStats } from "@/lib/api/coffee.functions";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -68,6 +71,19 @@ const features = [
 ];
 
 function LandingPage() {
+  const fn = useServerFn(getDashboardStats)
+  const { data } = useQuery({
+    queryKey: ["/"],
+    queryFn: () => fn(),
+    retry: (count, err) => {
+      if (count < 2 && err instanceof Error && err.message.toLowerCase().includes("unauthorized")) return true;
+      return count < 1;
+    },
+  })
+
+  const peso = (n: number) => "₱" + Number(n).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
@@ -142,7 +158,7 @@ function LandingPage() {
                 </div>
                 <div className="mt-5 grid grid-cols-2 gap-3">
                   {[
-                    { label: "Revenue", value: "$1,284" },
+                    { label: "Revenue", value: `${peso(data?.totalSales || 0)}` },
                     { label: "Orders", value: "96" },
                     { label: "Top item", value: "Latte" },
                     { label: "Stock alerts", value: "2" },
@@ -155,9 +171,9 @@ function LandingPage() {
                 </div>
                 <div className="mt-5 space-y-2">
                   {[
-                    ["Espresso", "$3.50"],
-                    ["Cappuccino", "$4.20"],
-                    ["Croissant", "$2.80"],
+                    ["Espresso", "₱3.50"],
+                    ["Cappuccino", "₱4.20"],
+                    ["Croissant", "₱2.80"],
                   ].map(([n, p]) => (
                     <div
                       key={n}

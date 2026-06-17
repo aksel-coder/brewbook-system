@@ -7,8 +7,12 @@ export const getRouter = () => {
     defaultOptions: {
       queries: {
         staleTime: 30_000,
-        retry: (failureCount) => {
+        refetchOnWindowFocus: true,
+        refetchOnReconnect: true,
+        retry: (failureCount, error) => {
           if (typeof navigator !== "undefined" && !navigator.onLine) return false;
+          const msg = error instanceof Error ? error.message : String(error);
+          if (msg.includes("Unauthorized") || msg.includes("Forbidden")) return false;
           return failureCount < 1;
         },
       },

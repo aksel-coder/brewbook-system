@@ -30,17 +30,54 @@ function AuthLayout() {
   const qc = useQueryClient();
   const fetchRole = useServerFn(getMyRole);
   const claim = useServerFn(claimFirstAdmin);
-  const { data: me, refetch } = useQuery({ queryKey: ["me"], queryFn: () => fetchRole() });
+  const { data: me, refetch, isLoading: meLoading, isFetching: meFetching, error: meError } = useQuery({
+    queryKey: ["me"],
+    queryFn: () => fetchRole(),
+    refetchOnWindowFocus: true,
+    refetchOnMount: "always",
+  });
   const [claiming, setClaiming] = useState(false);
 
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+    console.log("[AuthLayout] session/role state:", {
+      meLoading,
+      meFetching,
+      meError: meError ? (meError as Error).message : null,
+      me,
+    });
+  }, [me, meLoading, meFetching, meError]);
+
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log("[AuthLayout] auth state:", event, session?.user?.id ?? "no session");
       if (event === "SIGNED_OUT") {
         router.navigate({ to: "/login", search: {}, replace: true });
       }
+      if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED") {
+        qc.invalidateQueries({ queryKey: ["me"] });
+      }
     });
     return () => subscription.unsubscribe();
-  }, [router]);
+  }, [router, qc]);
+
+  useEffect(() => {
+    const onVisible = async () => {
+      if (document.visibilityState !== "visible") return;
+      console.log("[AuthLayout] tab visible — refreshing session + queries");
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        const now = Math.floor(Date.now() / 1000);
+        const expiresAt = session.expires_at ?? 0;
+        if (expiresAt - now < 300) {
+          await supabase.auth.refreshSession();
+        }
+      }
+      refetch();
+      qc.invalidateQueries();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [refetch, qc]);
 
   const handleClaim = async () => {
     setClaiming(true);

@@ -5,9 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import logo from "@/assets/coffee-zone-logo.jpg.asset.json";
 
 type LoginSearch = { redirect?: string };
 
@@ -39,7 +37,6 @@ function LoginPage() {
   const search = Route.useSearch();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [fullName, setFullName] = useState("");
   const [loading, setLoading] = useState(false);
 
   const signIn = async (e: React.FormEvent) => {
@@ -56,27 +53,6 @@ function LoginPage() {
     }
   };
 
-  const signUp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    try {
-      const { error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: { data: { full_name: fullName }, emailRedirectTo: window.location.origin },
-      });
-      if (error) return toast.error(error.message);
-
-      const { error: signInErr } = await supabase.auth.signInWithPassword({ email, password });
-      if (signInErr) return toast.error(signInErr.message);
-
-      toast.success("Account created!");
-      navigate({ to: safeRedirect(search.redirect) as any, replace: true });
-    } finally {
-      setLoading(false);
-    }
-  };
-
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-background via-secondary to-background p-4">
       <div className="w-full max-w-md">
@@ -87,53 +63,23 @@ function LoginPage() {
         </div>
         <Card className="border-border/60 shadow-xl">
           <CardHeader>
-            <CardTitle>Welcome</CardTitle>
+            <CardTitle>Sign in</CardTitle>
             <CardDescription>Sign in to manage your coffee shop.</CardDescription>
           </CardHeader>
           <CardContent>
-            <Tabs defaultValue="signin">
-              <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="signin">Sign in</TabsTrigger>
-                <TabsTrigger value="signup">Create account</TabsTrigger>
-              </TabsList>
-              <TabsContent value="signin">
-                <form onSubmit={signIn} className="space-y-3 pt-3">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="e1">Email</Label>
-                    <Input id="e1" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="p1">Password</Label>
-                    <Input id="p1" type="password" required value={password} onChange={(e) => setPassword(e.target.value)} />
-                  </div>
-                  <Button type="submit" className="w-full" disabled={loading}>
-                    {loading ? "Signing in..." : "Sign in"}
-                  </Button>
-                </form>
-              </TabsContent>
-              <TabsContent value="signup">
-                <form onSubmit={signUp} className="space-y-3 pt-3">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="n2">Full name</Label>
-                    <Input id="n2" required value={fullName} onChange={(e) => setFullName(e.target.value)} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="e2">Email</Label>
-                    <Input id="e2" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="p2">Password</Label>
-                    <Input id="p2" type="password" required minLength={6} value={password} onChange={(e) => setPassword(e.target.value)} />
-                  </div>
-                  <Button type="submit" className="w-full" disabled={loading}>
-                    {loading ? "Creating..." : "Create account"}
-                  </Button>
-                  <p className="text-xs text-muted-foreground">
-                    New accounts start as Cashier. The first user can claim administrator access from the dashboard.
-                  </p>
-                </form>
-              </TabsContent>
-            </Tabs>
+            <form onSubmit={signIn} className="space-y-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="email">Email</Label>
+                <Input id="email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="password">Password</Label>
+                <Input id="password" type="password" required value={password} onChange={(e) => setPassword(e.target.value)} />
+              </div>
+              <Button type="submit" className="w-full" disabled={loading}>
+                {loading ? "Signing in..." : "Sign in"}
+              </Button>
+            </form>
           </CardContent>
         </Card>
       </div>

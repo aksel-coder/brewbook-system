@@ -12,6 +12,8 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useState } from "react";
 import { toast } from "sonner";
+import { DataTablePagination } from "@/components/data-table-pagination";
+import { usePagination } from "@/hooks/use-pagination";
 
 export const Route = createFileRoute("/_authenticated/inventory")({
   head: () => ({ meta: [{ title: "Inventory — Coffee Zone" }] }),
@@ -25,6 +27,8 @@ function Inventory() {
   const qc = useQueryClient();
   const { data: products = [] } = useQuery({ queryKey: ["products"], queryFn: () => fn() });
   const { data: txns = [] } = useQuery({ queryKey: ["inventoryTxns"], queryFn: () => txnFn() });
+  const stockPagination = usePagination(products as any[]);
+  const txnPagination = usePagination(txns as any[]);
 
   const [open, setOpen] = useState(false);
   const [pid, setPid] = useState("");
@@ -99,7 +103,7 @@ function Inventory() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {(products as any[]).map(p => {
+              {stockPagination.paginatedItems.map(p => {
                 const low = p.stock_quantity <= p.low_stock_threshold;
                 const out = p.stock_quantity === 0;
                 return (
@@ -118,6 +122,7 @@ function Inventory() {
               })}
             </TableBody>
           </Table>
+          <DataTablePagination {...stockPagination} onPageChange={stockPagination.setPage} />
         </CardContent>
       </Card>
 
@@ -135,7 +140,7 @@ function Inventory() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {(txns as any[]).slice(0, 50).map((t: any) => (
+              {txnPagination.paginatedItems.map((t: any) => (
                 <TableRow key={t.id}>
                   <TableCell className="text-xs">{new Date(t.created_at).toLocaleString()}</TableCell>
                   <TableCell>{t.products?.name}</TableCell>
@@ -146,6 +151,7 @@ function Inventory() {
               ))}
             </TableBody>
           </Table>
+          <DataTablePagination {...txnPagination} onPageChange={txnPagination.setPage} />
         </CardContent>
       </Card>
     </div>

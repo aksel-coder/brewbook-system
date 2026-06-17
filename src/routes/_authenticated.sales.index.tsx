@@ -112,7 +112,7 @@ function SalesPOS() {
             {filtered.map((p: any) => (
               <button key={p.id} onClick={() => addToCart(p)} disabled={p.stock_quantity === 0}
                 className="group rounded-xl border bg-card p-4 text-left transition hover:border-primary hover:shadow-md disabled:opacity-40">
-                <ProductImage path={p.image_url} className="h-20 w-full rounded-md" />
+                <ProductImage path={p.image_url} className="h-40 w-full rounded-md" />
                 <div className="mt-3 font-medium">{p.name}</div>
                 <div className="text-xs text-muted-foreground">{p.categories?.name}</div>
                 <div className="mt-2 flex items-center justify-between">
@@ -163,7 +163,7 @@ function SalesPOS() {
             <>
               <div className="print-area bg-white p-4 text-black">
                 <div className="flex flex-col items-center text-center">
-                  <img src={logo.url} className="h-16 w-16 rounded-full" alt="logo" />
+                  <img src={'/coffeLogo.jpg'} className="h-16 w-16 rounded-full" alt="logo" />
                   <div className="mt-2 font-display text-xl font-bold">COFFEE ZONE</div>
                   <div className="text-xs">Start your day right</div>
                 </div>

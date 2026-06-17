@@ -176,13 +176,22 @@ export const createSale = createServerFn({ method: "POST" })
 export const listSales = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const { data, error } = await context.supabase
-      .from("sales")
-      .select("*, sale_items(id, quantity, unit_price, products(name))")
-      .order("sale_date", { ascending: false })
-      .limit(200);
-    if (error) throw new Error(error.message);
-    return data ?? [];
+    const all: any[] = [];
+    const pageSize = 1000;
+    let from = 0;
+    while (true) {
+      const { data, error } = await context.supabase
+        .from("sales")
+        .select("*, sale_items(id, quantity, unit_price, products(name))")
+        .order("sale_date", { ascending: false })
+        .range(from, from + pageSize - 1);
+      if (error) throw new Error(error.message);
+      const batch = data ?? [];
+      all.push(...batch);
+      if (batch.length < pageSize) break;
+      from += pageSize;
+    }
+    return all;
   });
 
 // ============ INVENTORY ============
@@ -221,11 +230,20 @@ export const adjustInventory = createServerFn({ method: "POST" })
 export const listInventoryTxns = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const { data, error } = await context.supabase
-      .from("inventory_transactions")
-      .select("*, products(name)")
-      .order("created_at", { ascending: false })
-      .limit(200);
-    if (error) throw new Error(error.message);
-    return data ?? [];
+    const all: any[] = [];
+    const pageSize = 1000;
+    let from = 0;
+    while (true) {
+      const { data, error } = await context.supabase
+        .from("inventory_transactions")
+        .select("*, products(name)")
+        .order("created_at", { ascending: false })
+        .range(from, from + pageSize - 1);
+      if (error) throw new Error(error.message);
+      const batch = data ?? [];
+      all.push(...batch);
+      if (batch.length < pageSize) break;
+      from += pageSize;
+    }
+    return all;
   });

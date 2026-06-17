@@ -16,6 +16,8 @@ import { ImageIcon, Pencil, Plus, Trash2, Upload } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import { DataTablePagination } from "@/components/data-table-pagination";
+import { usePagination } from "@/hooks/use-pagination";
 
 function ProductImage({ path, className }: { path?: string | null; className?: string }) {
   const [url, setUrl] = useState<string | null>(null);
@@ -51,6 +53,7 @@ function Products() {
 
   const { data: products = [] } = useQuery({ queryKey: ["products"], queryFn: () => fn() });
   const { data: categories = [] } = useQuery({ queryKey: ["categories"], queryFn: () => catFn() });
+  const productsPagination = usePagination(products as any[]);
 
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(blank);
@@ -183,7 +186,7 @@ function Products() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {(products as any[]).map(p => (
+                  {productsPagination.paginatedItems.map(p => (
                     <TableRow key={p.id}>
                       <TableCell><ProductImage path={p.image_url} className="h-10 w-10 rounded-md border" /></TableCell>
                       <TableCell className="font-medium">{p.name}</TableCell>
@@ -205,6 +208,7 @@ function Products() {
                   ))}
                 </TableBody>
               </Table>
+              <DataTablePagination {...productsPagination} onPageChange={productsPagination.setPage} />
             </CardContent>
           </Card>
         </TabsContent>
