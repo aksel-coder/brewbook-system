@@ -149,14 +149,30 @@ export const createUser = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
-export const deleteUser = createServerFn({ method: "POST" })
+  export const deleteUser = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d) => z.object({ user_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
+    
+    // 1. Verify that the person making the request is an admin
     await requireAdmin(supabase, userId);
-    const { error } = await supabase.rpc("admin_delete_user", { target_user_id: data.user_id });
-    if (error) throw new Error(error.message);
+    
+    // 2. Clean up your custom table first (bypassing RLS using supabaseAdmin)
+    const { error: roleError } = await supabaseAdmin
+      .from("user_roles")
+      .delete()
+      .eq("user_id", data.user_id);
+      
+    if (roleError) throw new Error(roleError.message);
+    
+    // 3. Delete the user natively from Supabase Auth using the Admin API
+    const { error: authError } = await supabaseAdmin.auth.admin.deleteUser(
+      data.user_id
+    );
+    
+    if (authError) throw new Error(authError.message);
+    
     return { ok: true };
   });
 

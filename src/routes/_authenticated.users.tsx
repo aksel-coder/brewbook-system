@@ -67,6 +67,7 @@ function Users() {
       setForm({ email: "", password: "", full_name: "", role: "cashier" }); qc.invalidateQueries({ queryKey: ["users"] }); }
     catch (e: any) { toast.error(e.message); }
   };
+  
   const setRole = async (user_id: string, role: "admin" | "cashier") => {
     try {
       await roleFn({ data: { user_id, role } });
@@ -75,6 +76,7 @@ function Users() {
     }
     catch (e: any) { toast.error(e.message); }
   };
+
   const remove = async (user_id: string) => {
     try {
       await delFn({ data: { user_id } });
