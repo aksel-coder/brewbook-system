@@ -117,11 +117,11 @@ function Reports() {
   const lowStock = (products as any[]).filter(p => p.stock_quantity <= p.low_stock_threshold);
 
   const exportSales = (label: string, data: any[]) => {
-    const rows = data.map(s => [s.receipt_number, new Date(s.sale_date).toLocaleString(), Number(s.subtotal).toFixed(2), Number(s.tax).toFixed(2), Number(s.total_amount).toFixed(2)]);
+    const rows = data.map(s => [s.receipt_number, new Date(s.sale_date).toLocaleString(), Number(s.subtotal).toFixed(2)]);
     return {
       csv: () => downloadCSV(`${label}.csv`, [["Receipt", "Date", "Subtotal", "Total"], ...rows]),
       pdf: () => downloadPDF(label, ["Receipt", "Date", "Subtotal", "Total"], rows),
-      print: () => printTable(label, ["Receipt", "Date", "Subtotal", "Total"], rows),
+      print: () => printTable(label, ["Receipt", "Date", "Total"], rows),
     };
   };
 

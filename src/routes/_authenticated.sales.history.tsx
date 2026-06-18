@@ -32,14 +32,12 @@ function History() {
   const handlePrint = () => {
     printTable(
       "Sales History",
-      ["Receipt", "Date", "Items", "Subtotal", "Total"],
+      ["Receipt", "Date", "Items", "Total"],
       filtered.map((s: any) => [
         s.receipt_number,
         new Date(s.sale_date).toLocaleString(),
         (s.sale_items ?? []).map((i: any) => `${i.quantity}× ${i.products?.name}`).join(", "),
         peso(s.subtotal),
-        peso(s.tax),
-        peso(s.total_amount),
       ]),
     );
   };
