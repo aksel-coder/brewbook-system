@@ -145,14 +145,14 @@ function Reports() {
         <CardContent>
           <PaginatedTable
             items={data}
-            headers={<TableRow><TableHead>Receipt</TableHead><TableHead>Date</TableHead><TableHead className="text-right">Subtotal</TableHead><TableHead className="text-right">Total</TableHead></TableRow>}
+            headers={<TableRow><TableHead>Receipt</TableHead><TableHead>Date</TableHead><TableHead className="text-right">Total</TableHead></TableRow>}
             getKey={s => s.id}
             renderRow={s => (
               <>
                 <TableCell className="font-mono text-xs">{s.receipt_number}</TableCell>
                 <TableCell>{new Date(s.sale_date).toLocaleString()}</TableCell>
-                <TableCell className="text-right">{peso(s.subtotal)}</TableCell>
-                <TableCell className="text-right font-semibold">{peso(s.total_amount)}</TableCell>
+                {/* <TableCell className="text-right">{peso(s.subtotal)}</TableCell> */}
+                <TableCell className="text-right font-semibold">{peso(s.subtotal)}</TableCell>
               </>
             )}
           />

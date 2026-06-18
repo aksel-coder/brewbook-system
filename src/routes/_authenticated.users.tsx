@@ -35,7 +35,7 @@ function Users() {
     refetchOnMount: "always",
   });
   const { paginatedItems, ...pagination } = usePagination(data as any[]);
-
+  console.log('data: ', paginatedItems)
   // useEffect(() => {
   //   console.log("[Users] query state:", {
   //     isLoading,

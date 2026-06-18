@@ -181,8 +181,8 @@ function SalesPOS() {
                   </tbody>
                 </table>
                 <div className="mt-3 space-y-0.5 border-t border-dashed pt-2 text-xs">
-                  <div className="flex justify-between"><span>Subtotal</span><span>{peso(receipt.subtotal)}</span></div>
-                  <div className="flex justify-between font-bold"><span>TOTAL</span><span>{peso(receipt.total)}</span></div>
+                  {/* <div className="flex justify-between"><span>Subtotal</span><span>{peso(receipt.subtotal)}</span></div> */}
+                  <div className="flex justify-between font-bold"><span>TOTAL</span><span>{peso(receipt.subtotal)}</span></div>
                 </div>
                 <div className="mt-3 text-center text-xs">Thank you! ☕</div>
               </div>

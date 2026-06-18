@@ -64,7 +64,7 @@ function History() {
                 <TableHead>Receipt</TableHead>
                 <TableHead>Date</TableHead>
                 <TableHead>Items</TableHead>
-                <TableHead className="text-right">Subtotal</TableHead>
+                {/* <TableHead className="text-right">Subtotal</TableHead> */}
                 <TableHead className="text-right">Total</TableHead>
               </TableRow>
             </TableHeader>
@@ -78,8 +78,8 @@ function History() {
                     <TableCell className="text-sm text-muted-foreground">
                       {(s.sale_items ?? []).map((i: any) => `${i.quantity}× ${i.products?.name}`).join(", ")}
                     </TableCell>
-                    <TableCell className="text-right">{peso(s.subtotal)}</TableCell>
-                    <TableCell className="text-right font-semibold">{peso(s.total_amount)}</TableCell>
+                    {/* <TableCell className="text-right">{peso(s.subtotal)}</TableCell> */}
+                    <TableCell className="text-right font-semibold">{peso(s.subtotal)}</TableCell>
                   </TableRow>
                 ))}
             </TableBody>

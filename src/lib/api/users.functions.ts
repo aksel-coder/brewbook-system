@@ -76,8 +76,10 @@ export const getMyRole = createServerFn({ method: "GET" })
     // 2. Fetch directly from Auth via supabaseAdmin, and grab your app roles concurrently
     const [{ data: authData, error: authError }, { data: roles, error: rolesError }] = await Promise.all([
       supabaseAdmin.auth.admin.listUsers(),
-      supabase.from("user_roles").select("user_id, role"),
+      supabaseAdmin.from("user_roles").select("user_id, role"),
     ]);
+
+    console.log('authData:', authData)
 
     if (authError) throw new Error(authError.message);
     if (rolesError) throw new Error(rolesError.message);
