@@ -88,6 +88,7 @@ function Products() {
   };
 
   const submit = async (e: React.FormEvent) => {
+    console.log('checkkkkk')
     e.preventDefault();
     try {
       const payload = {

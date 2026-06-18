@@ -145,8 +145,8 @@ function SalesPOS() {
                 ))}
               </ul>}
             <div className="space-y-1 border-t pt-3 text-sm">
-              <div className="flex justify-between"><span>Subtotal</span><span>{peso(subtotal)}</span></div>
-              <div className="flex justify-between font-display text-lg font-bold"><span>Total</span><span>{peso(total)}</span></div>
+              {/* <div className="flex justify-between"><span>Subtotal</span><span>{peso(subtotal)}</span></div> */}
+              <div className="flex justify-between font-display text-lg font-bold"><span>Total</span><span>{peso(subtotal)}</span></div>
             </div>
             <Button className="w-full" size="lg" disabled={cart.length === 0 || busy} onClick={checkout}>
               {busy ? "Processing..." : "Checkout"}

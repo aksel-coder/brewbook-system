@@ -119,9 +119,9 @@ function Reports() {
   const exportSales = (label: string, data: any[]) => {
     const rows = data.map(s => [s.receipt_number, new Date(s.sale_date).toLocaleString(), Number(s.subtotal).toFixed(2), Number(s.tax).toFixed(2), Number(s.total_amount).toFixed(2)]);
     return {
-      csv: () => downloadCSV(`${label}.csv`, [["Receipt", "Date", "Subtotal", "Tax", "Total"], ...rows]),
-      pdf: () => downloadPDF(label, ["Receipt", "Date", "Subtotal", "Tax", "Total"], rows),
-      print: () => printTable(label, ["Receipt", "Date", "Subtotal", "Tax", "Total"], rows),
+      csv: () => downloadCSV(`${label}.csv`, [["Receipt", "Date", "Subtotal", "Total"], ...rows]),
+      pdf: () => downloadPDF(label, ["Receipt", "Date", "Subtotal", "Total"], rows),
+      print: () => printTable(label, ["Receipt", "Date", "Subtotal", "Total"], rows),
     };
   };
 
@@ -145,14 +145,13 @@ function Reports() {
         <CardContent>
           <PaginatedTable
             items={data}
-            headers={<TableRow><TableHead>Receipt</TableHead><TableHead>Date</TableHead><TableHead className="text-right">Subtotal</TableHead><TableHead className="text-right">Tax</TableHead><TableHead className="text-right">Total</TableHead></TableRow>}
+            headers={<TableRow><TableHead>Receipt</TableHead><TableHead>Date</TableHead><TableHead className="text-right">Subtotal</TableHead><TableHead className="text-right">Total</TableHead></TableRow>}
             getKey={s => s.id}
             renderRow={s => (
               <>
                 <TableCell className="font-mono text-xs">{s.receipt_number}</TableCell>
                 <TableCell>{new Date(s.sale_date).toLocaleString()}</TableCell>
                 <TableCell className="text-right">{peso(s.subtotal)}</TableCell>
-                <TableCell className="text-right">{peso(s.tax)}</TableCell>
                 <TableCell className="text-right font-semibold">{peso(s.total_amount)}</TableCell>
               </>
             )}
