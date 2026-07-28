@@ -9,12 +9,12 @@ export const getDashboardStats = createServerFn({ method: "GET" })
     const { supabase } = context;
     const today = new Date(); today.setHours(0, 0, 0, 0);
     const [salesAll, salesToday, products, lowStock, recent, bestSellers, last7] = await Promise.all([
-      supabase.from("sales").select("total_amount"),
-      supabase.from("sales").select("total_amount").gte("sale_date", today.toISOString()),
+      supabase.from("sales").select("id, total_amount"),
+      supabase.from("sales").select("id, total_amount").gte("sale_date", today.toISOString()),
       supabase.from("products").select("id, stock_quantity, low_stock_threshold"),
       supabase.from("products").select("id, name, stock_quantity, low_stock_threshold").eq("is_active", true),
       supabase.from("sales").select("id, receipt_number, total_amount, sale_date").order("sale_date", { ascending: false }).limit(5),
-      supabase.from("sale_items").select("quantity, product_id, products(name)").limit(500),
+      supabase.from("sale_items").select("quantity, product_id, unit_price, products(name, price)").limit(500),
       supabase.from("sales").select("total_amount, sale_date").gte("sale_date", new Date(Date.now() - 7 * 86400000).toISOString()),
     ]);
 
@@ -24,16 +24,19 @@ export const getDashboardStats = createServerFn({ method: "GET" })
 
     const totalSales = (salesAll.data ?? []).reduce((s, r) => s + Number(r.total_amount), 0);
     const todaySales = (salesToday.data ?? []).reduce((s, r) => s + Number(r.total_amount), 0);
+    const orderCount = salesToday.data?.length ?? 0;
     const totalProducts = products.data?.length ?? 0;
     const totalStock = (products.data ?? []).reduce((s, p) => s + (p.stock_quantity ?? 0), 0);
     const lowStockItems = (lowStock.data ?? []).filter(p => p.stock_quantity <= p.low_stock_threshold);
 
     // best sellers aggregation
-    const bsMap = new Map<string, { name: string; qty: number }>();
+    const bsMap = new Map<string, { name: string; qty: number; price: number }>();
     for (const row of bestSellers.data ?? []) {
       const name = (row as any).products?.name ?? "Unknown";
-      const cur = bsMap.get(row.product_id) ?? { name, qty: 0 };
-      cur.qty += row.quantity;
+      const price = Number((row as any).products?.price ?? row.unit_price ?? 0);
+      const cur = bsMap.get(row.product_id) ?? { name, qty: 0, price };
+      cur.qty += Number(row.quantity ?? 0);
+      if (price > 0) cur.price = price;
       bsMap.set(row.product_id, cur);
     }
     const best = Array.from(bsMap.values()).sort((a, b) => b.qty - a.qty).slice(0, 5);
@@ -51,11 +54,16 @@ export const getDashboardStats = createServerFn({ method: "GET" })
     const salesChart = Array.from(dayMap.entries()).map(([date, total]) => ({ date: date.slice(5), total }));
 
     return {
-      totalSales, todaySales, totalProducts, totalStock,
+      totalSales,
+      todaySales,
+      orderCount,
+      totalProducts,
+      totalStock,
       lowStockCount: lowStockItems.length,
       lowStockItems: lowStockItems.slice(0, 5),
       recent: recent.data ?? [],
       best,
+      topItem: best[0] ?? null,
       salesChart,
     };
   });

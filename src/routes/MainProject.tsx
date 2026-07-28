@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { CoffeeZoneLandingPage } from "@/components/coffee-zone-landing";
 
-export const Route = createFileRoute("/")({
+export const Route = createFileRoute("/MainProject")({
   head: () => ({
     meta: [
       { title: "Coffee Zone — Sales & Inventory Management" },
