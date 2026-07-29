@@ -147,7 +147,7 @@ export function CoffeeZoneLandingPage() {
                 </div>
                 <div className="mt-5 grid grid-cols-2 gap-3">
                   {[
-                    { label: "Revenue", value: formatPeso(data?.totalSales || 0) },
+                    { label: "Revenue", value: formatPeso(data?.todaySales || 0) },
                     { label: "Orders", value: data?.orderCount?.toString() ?? "0" },
                     { label: "Top item", value: data?.topItem?.name ?? "No sales yet" },
                     { label: "Stock alerts", value: (data?.lowStockCount ?? 0).toString() },

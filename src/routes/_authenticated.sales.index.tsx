@@ -73,15 +73,14 @@ function SalesPOS() {
   const remove = (id: string) => setCart(prev => prev.filter(c => c.product_id !== id));
 
   const subtotal = cart.reduce((s, c) => s + c.price * c.quantity, 0);
-  const tax = +(subtotal * 0.12).toFixed(2);
-  const total = +(subtotal + tax).toFixed(2);
+  const total = subtotal;
 
   const checkout = async () => {
     if (cart.length === 0) return;
     setBusy(true);
     try {
       const items = cart.map(c => ({ product_id: c.product_id, quantity: c.quantity, unit_price: c.price }));
-      const res = await createFn({ data: { items, tax_rate: 0.12 } });
+      const res = await createFn({ data: { items } });
       setReceipt({ ...res, items: cart, ts: new Date() });
       setCart([]);
       qc.invalidateQueries({ queryKey: ["products"] });

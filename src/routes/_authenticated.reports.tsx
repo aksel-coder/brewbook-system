@@ -117,10 +117,10 @@ function Reports() {
   const lowStock = (products as any[]).filter(p => p.stock_quantity <= p.low_stock_threshold);
 
   const exportSales = (label: string, data: any[]) => {
-    const rows = data.map(s => [s.receipt_number, new Date(s.sale_date).toLocaleString(), Number(s.subtotal).toFixed(2)]);
+    const rows = data.map(s => [s.receipt_number, new Date(s.sale_date).toLocaleString(), Number(s.total_amount).toFixed(2)]);
     return {
-      csv: () => downloadCSV(`${label}.csv`, [["Receipt", "Date", "Subtotal", "Total"], ...rows]),
-      pdf: () => downloadPDF(label, ["Receipt", "Date", "Subtotal", "Total"], rows),
+      csv: () => downloadCSV(`${label}.csv`, [["Receipt", "Date", "Total"], ...rows]),
+      pdf: () => downloadPDF(label, ["Receipt", "Date", "Total"], rows),
       print: () => printTable(label, ["Receipt", "Date", "Total"], rows),
     };
   };
@@ -151,8 +151,7 @@ function Reports() {
               <>
                 <TableCell className="font-mono text-xs">{s.receipt_number}</TableCell>
                 <TableCell>{new Date(s.sale_date).toLocaleString()}</TableCell>
-                {/* <TableCell className="text-right">{peso(s.subtotal)}</TableCell> */}
-                <TableCell className="text-right font-semibold">{peso(s.subtotal)}</TableCell>
+                <TableCell className="text-right font-semibold">{peso(s.total_amount)}</TableCell>
               </>
             )}
           />

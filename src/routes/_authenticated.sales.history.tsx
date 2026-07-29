@@ -37,7 +37,7 @@ function History() {
         s.receipt_number,
         new Date(s.sale_date).toLocaleString(),
         (s.sale_items ?? []).map((i: any) => `${i.quantity}× ${i.products?.name}`).join(", "),
-        peso(s.subtotal),
+        peso(s.total_amount),
       ]),
     );
   };
@@ -76,8 +76,7 @@ function History() {
                     <TableCell className="text-sm text-muted-foreground">
                       {(s.sale_items ?? []).map((i: any) => `${i.quantity}× ${i.products?.name}`).join(", ")}
                     </TableCell>
-                    {/* <TableCell className="text-right">{peso(s.subtotal)}</TableCell> */}
-                    <TableCell className="text-right font-semibold">{peso(s.subtotal)}</TableCell>
+                    <TableCell className="text-right font-semibold">{peso(s.total_amount)}</TableCell>
                   </TableRow>
                 ))}
             </TableBody>

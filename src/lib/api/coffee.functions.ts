@@ -8,18 +8,30 @@ export const getDashboardStats = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     const { supabase } = context;
     const today = new Date(); today.setHours(0, 0, 0, 0);
-    const [salesAll, salesToday, products, lowStock, recent, bestSellers, last7] = await Promise.all([
+    const [salesAll, salesToday, products, lowStock, recent, last7] = await Promise.all([
       supabase.from("sales").select("id, total_amount"),
       supabase.from("sales").select("id, total_amount").gte("sale_date", today.toISOString()),
       supabase.from("products").select("id, stock_quantity, low_stock_threshold"),
       supabase.from("products").select("id, name, stock_quantity, low_stock_threshold").eq("is_active", true),
       supabase.from("sales").select("id, receipt_number, total_amount, sale_date").order("sale_date", { ascending: false }).limit(5),
-      supabase.from("sale_items").select("quantity, product_id, unit_price, products(name, price)").limit(500),
       supabase.from("sales").select("total_amount, sale_date").gte("sale_date", new Date(Date.now() - 7 * 86400000).toISOString()),
     ]);
 
-    for (const result of [salesAll, salesToday, products, lowStock, recent, bestSellers, last7]) {
+    for (const result of [salesAll, salesToday, products, lowStock, recent, last7]) {
       if (result.error) throw new Error(result.error.message);
+    }
+
+    const bestSellers: any[] = [];
+    let bestSellersFrom = 0;
+    while (true) {
+      const { data, error } = await supabase
+        .from("sale_items")
+        .select("quantity, product_id, unit_price, products(name, price)")
+        .range(bestSellersFrom, bestSellersFrom + 999);
+      if (error) throw new Error(error.message);
+      bestSellers.push(...(data ?? []));
+      if ((data?.length ?? 0) < 1000) break;
+      bestSellersFrom += 1000;
     }
 
     const totalSales = (salesAll.data ?? []).reduce((s, r) => s + Number(r.total_amount), 0);
@@ -31,9 +43,9 @@ export const getDashboardStats = createServerFn({ method: "GET" })
 
     // best sellers aggregation
     const bsMap = new Map<string, { name: string; qty: number; price: number }>();
-    for (const row of bestSellers.data ?? []) {
-      const name = (row as any).products?.name ?? "Unknown";
-      const price = Number((row as any).products?.price ?? row.unit_price ?? 0);
+    for (const row of bestSellers) {
+      const name = row.products?.name ?? "Unknown";
+      const price = Number(row.products?.price ?? row.unit_price ?? 0);
       const cur = bsMap.get(row.product_id) ?? { name, qty: 0, price };
       cur.qty += Number(row.quantity ?? 0);
       if (price > 0) cur.price = price;
@@ -64,6 +76,8 @@ export const getDashboardStats = createServerFn({ method: "GET" })
       recent: recent.data ?? [],
       best,
       topItem: best[0] ?? null,
+      topSeller: best[0] ?? null,
+      todayOrders: orderCount,
       salesChart,
     };
   });
@@ -162,8 +176,8 @@ export const createSale = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     const subtotal = data.items.reduce((s, i) => s + i.quantity * i.unit_price, 0);
-    const tax = +(subtotal * data.tax_rate).toFixed(2);
-    const total = +(subtotal + tax).toFixed(2);
+    const tax = 0;
+    const total = subtotal;
     const receipt = "CZ-" + Date.now().toString(36).toUpperCase();
 
     const { data: sale, error: se } = await supabase.from("sales").insert({
