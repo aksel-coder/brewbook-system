@@ -38,14 +38,20 @@ function downloadPDF(title: string, head: string[], body: (string | number)[][])
   doc.save(`${title.replace(/\s+/g, "_")}.pdf`);
 }
 
+function parseFilterDate(value: string) {
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date();
+  date.setFullYear(year, month - 1, day, 0, 0, 0, 0);
+  return date;
+}
+
 function inDateRange(d: Date, from: string, to: string) {
   if (from) {
-    const start = new Date(from);
-    start.setHours(0, 0, 0, 0);
+    const start = parseFilterDate(from);
     if (d < start) return false;
   }
   if (to) {
-    const end = new Date(to);
+    const end = parseFilterDate(to);
     end.setHours(23, 59, 59, 999);
     if (d > end) return false;
   }
@@ -95,13 +101,17 @@ function Reports() {
 
   const now = new Date();
   const buckets = useMemo(() => {
+    if (dateFrom || dateTo) {
+      return { daily: filteredSales, weekly: filteredSales, monthly: filteredSales };
+    }
+
     const day = new Date(now); day.setHours(0, 0, 0, 0);
     const week = new Date(now); week.setDate(week.getDate() - 7);
     const month = new Date(now); month.setMonth(month.getMonth() - 1);
     const inRange = (d: Date, since: Date) => d >= since;
     const filter = (since: Date) => filteredSales.filter(s => inRange(new Date(s.sale_date), since));
     return { daily: filter(day), weekly: filter(week), monthly: filter(month) };
-  }, [filteredSales]);
+  }, [filteredSales, dateFrom, dateTo]);
 
   const bestSellers = useMemo(() => {
     const map = new Map<string, { name: string; qty: number; revenue: number }>();
