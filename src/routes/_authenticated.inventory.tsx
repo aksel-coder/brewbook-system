@@ -44,6 +44,7 @@ function Inventory() {
       qc.invalidateQueries({ queryKey: ["products"] });
       qc.invalidateQueries({ queryKey: ["inventoryTxns"] });
       qc.invalidateQueries({ queryKey: ["dashboard"] });
+      qc.invalidateQueries({ queryKey: ["sales"] });
       setOpen(false); setPid(""); setQty(""); setRef("");
     } catch (e: any) { toast.error(e.message); }
   };
@@ -98,6 +99,7 @@ function Inventory() {
                 <TableHead>Product</TableHead>
                 <TableHead>Category</TableHead>
                 <TableHead className="text-right">Stock</TableHead>
+                <TableHead className="text-right">Sold</TableHead>
                 <TableHead className="text-right">Threshold</TableHead>
                 <TableHead>Status</TableHead>
               </TableRow>
@@ -111,6 +113,7 @@ function Inventory() {
                     <TableCell className="font-medium">{p.name}</TableCell>
                     <TableCell>{p.categories?.name ?? "—"}</TableCell>
                     <TableCell className="text-right">{p.stock_quantity}</TableCell>
+                    <TableCell className="text-right">{p.sold_quantity ?? 0}</TableCell>
                     <TableCell className="text-right text-muted-foreground">{p.low_stock_threshold}</TableCell>
                     <TableCell>
                       <Badge variant={out ? "destructive" : low ? "destructive" : "secondary"}>

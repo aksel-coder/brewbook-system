@@ -2,22 +2,46 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
+const isCompletedSale = (sale: any) => {
+  const status = sale?.status ?? sale?.sale_status ?? sale?.state;
+  if (status == null) return true;
+  return String(status).toLowerCase() === "completed";
+};
+
+const enrichProductsWithSales = (products: any[], salesRows: any[]) => {
+  const soldByProduct = new Map<string, number>();
+  for (const sale of salesRows ?? []) {
+    if (!isCompletedSale(sale)) continue;
+    for (const item of sale.sale_items ?? []) {
+      const productId = item?.product_id;
+      if (!productId) continue;
+      soldByProduct.set(productId, (soldByProduct.get(productId) ?? 0) + Number(item.quantity ?? 0));
+    }
+  }
+
+  return (products ?? []).map((product) => ({
+    ...product,
+    sold_quantity: soldByProduct.get(product.id) ?? 0,
+  }));
+};
+
 // ============ DASHBOARD ============
 export const getDashboardStats = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { supabase } = context;
     const today = new Date(); today.setHours(0, 0, 0, 0);
-    const [salesAll, salesToday, products, lowStock, recent, last7] = await Promise.all([
+    const [salesAll, salesToday, products, lowStock, recent, last7, completedSales] = await Promise.all([
       supabase.from("sales").select("id, total_amount"),
       supabase.from("sales").select("id, total_amount").gte("sale_date", today.toISOString()),
       supabase.from("products").select("id, stock_quantity, low_stock_threshold"),
       supabase.from("products").select("id, name, stock_quantity, low_stock_threshold").eq("is_active", true),
       supabase.from("sales").select("id, receipt_number, total_amount, sale_date").order("sale_date", { ascending: false }).limit(5),
       supabase.from("sales").select("total_amount, sale_date").gte("sale_date", new Date(Date.now() - 7 * 86400000).toISOString()),
+      supabase.from("sales").select("id, sale_items(quantity, product_id)").order("sale_date", { ascending: false }),
     ]);
 
-    for (const result of [salesAll, salesToday, products, lowStock, recent, last7]) {
+    for (const result of [salesAll, salesToday, products, lowStock, recent, last7, completedSales]) {
       if (result.error) throw new Error(result.error.message);
     }
 
@@ -37,9 +61,10 @@ export const getDashboardStats = createServerFn({ method: "GET" })
     const totalSales = (salesAll.data ?? []).reduce((s, r) => s + Number(r.total_amount), 0);
     const todaySales = (salesToday.data ?? []).reduce((s, r) => s + Number(r.total_amount), 0);
     const orderCount = salesToday.data?.length ?? 0;
-    const totalProducts = products.data?.length ?? 0;
-    const totalStock = (products.data ?? []).reduce((s, p) => s + (p.stock_quantity ?? 0), 0);
-    const lowStockItems = (lowStock.data ?? []).filter(p => p.stock_quantity <= p.low_stock_threshold);
+    const productsWithSales = enrichProductsWithSales(products.data ?? [], completedSales.data ?? []);
+    const totalProducts = productsWithSales.length;
+    const totalStock = productsWithSales.reduce((s, p) => s + (p.stock_quantity ?? 0), 0);
+    const lowStockItems = productsWithSales.filter((p: any) => (p.stock_quantity ?? 0) <= (p.low_stock_threshold ?? 0));
 
     // best sellers aggregation
     const bsMap = new Map<string, { name: string; qty: number; price: number }>();
@@ -86,12 +111,15 @@ export const getDashboardStats = createServerFn({ method: "GET" })
 export const listProducts = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const { data, error } = await context.supabase
-      .from("products")
-      .select("*, categories(id, name)")
-      .order("name");
-    if (error) throw new Error(error.message);
-    return data ?? [];
+    const [productsResult, salesResult] = await Promise.all([
+      context.supabase.from("products").select("*, categories(id, name)").order("name"),
+      context.supabase.from("sales").select("id, sale_items(quantity, product_id)").order("sale_date", { ascending: false }),
+    ]);
+
+    if (productsResult.error) throw new Error(productsResult.error.message);
+    if (salesResult.error) throw new Error(salesResult.error.message);
+
+    return enrichProductsWithSales(productsResult.data ?? [], salesResult.data ?? []);
   });
 
 export const listCategories = createServerFn({ method: "GET" })
@@ -180,6 +208,22 @@ export const createSale = createServerFn({ method: "POST" })
     const total = subtotal;
     const receipt = "CZ-" + Date.now().toString(36).toUpperCase();
 
+    const productIds = [...new Set(data.items.map((item) => item.product_id))];
+    const { data: productsData, error: productLookupError } = await supabase
+      .from("products")
+      .select("id, name, stock_quantity")
+      .in("id", productIds);
+    if (productLookupError) throw new Error(productLookupError.message);
+
+    const productMap = new Map((productsData ?? []).map((product) => [product.id, product]));
+    for (const item of data.items) {
+      const current = productMap.get(item.product_id);
+      if (!current) throw new Error("Product not found");
+      if (Number(current.stock_quantity ?? 0) < item.quantity) {
+        throw new Error(`${current.name} has insufficient stock`);
+      }
+    }
+
     const { data: sale, error: se } = await supabase.from("sales").insert({
       receipt_number: receipt,
       user_id: userId,
@@ -191,6 +235,17 @@ export const createSale = createServerFn({ method: "POST" })
       data.items.map(i => ({ sale_id: sale.id, product_id: i.product_id, quantity: i.quantity, unit_price: i.unit_price }))
     );
     if (ie) throw new Error(ie.message);
+
+    for (const item of data.items) {
+      const current = productMap.get(item.product_id);
+      if (!current) continue;
+      const newStock = Number(current.stock_quantity ?? 0) - item.quantity;
+      const { error: ue } = await supabase.from("products").update({
+        stock_quantity: newStock,
+        updated_at: new Date().toISOString(),
+      }).eq("id", item.product_id);
+      if (ue) throw new Error(ue.message);
+    }
 
     return { sale, items: data.items, subtotal, tax, total };
   });
