@@ -125,9 +125,11 @@ function Dashboard() {
             {data.lowStockItems.length === 0 ? <p className="text-sm text-muted-foreground">All items healthy.</p> :
               <ul className="divide-y">
                 {data.lowStockItems.map((p: any) => (
-                  <li key={p.id} className="flex items-center justify-between py-2">
-                    <span>{p.name}</span>
-                    <Badge variant="destructive">{p.stock_quantity} left</Badge>
+                  <li key={p.id} className="flex items-center justify-between gap-3 py-2">
+                    <span className="truncate">{p.name}</span>
+                    <Badge variant="destructive" className="shrink-0">
+                      {p.stock_quantity === 0 ? "SOLD OUT" : `${p.stock_quantity} left`}
+                    </Badge>
                   </li>
                 ))}
               </ul>}

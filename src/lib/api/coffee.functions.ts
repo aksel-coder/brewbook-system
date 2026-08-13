@@ -31,17 +31,16 @@ export const getDashboardStats = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     const { supabase } = context;
     const today = new Date(); today.setHours(0, 0, 0, 0);
-    const [salesAll, salesToday, products, lowStock, recent, last7, completedSales] = await Promise.all([
+    const [salesAll, salesToday, products, recent, last7, completedSales] = await Promise.all([
       supabase.from("sales").select("id, total_amount"),
       supabase.from("sales").select("id, total_amount").gte("sale_date", today.toISOString()),
-      supabase.from("products").select("id, stock_quantity, low_stock_threshold"),
       supabase.from("products").select("id, name, stock_quantity, low_stock_threshold").eq("is_active", true),
       supabase.from("sales").select("id, receipt_number, total_amount, sale_date").order("sale_date", { ascending: false }).limit(5),
       supabase.from("sales").select("total_amount, sale_date").gte("sale_date", new Date(Date.now() - 7 * 86400000).toISOString()),
       supabase.from("sales").select("id, sale_items(quantity, product_id)").order("sale_date", { ascending: false }),
     ]);
 
-    for (const result of [salesAll, salesToday, products, lowStock, recent, last7, completedSales]) {
+    for (const result of [salesAll, salesToday, products, recent, last7, completedSales]) {
       if (result.error) throw new Error(result.error.message);
     }
 
