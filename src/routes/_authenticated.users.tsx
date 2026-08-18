@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { listUsers, createUser, updateUserRole, deleteUser } from "@/lib/api/users.functions";
+import { listUsers, createUser, updateUserRole, deleteUser, getMyRole } from "@/lib/api/users.functions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
@@ -27,6 +27,7 @@ function Users() {
   const createFn = useServerFn(createUser);
   const roleFn = useServerFn(updateUserRole);
   const delFn = useServerFn(deleteUser);
+  const fetchRole = useServerFn(getMyRole);
   const qc = useQueryClient();
   const { data = [], isLoading, error, isFetching, dataUpdatedAt, refetch } = useQuery({
     queryKey: ["users"],
@@ -34,6 +35,8 @@ function Users() {
     refetchOnWindowFocus: true,
     refetchOnMount: "always",
   });
+  const { data: me } = useQuery({ queryKey: ["me"], queryFn: () => fetchRole() });
+  const isAdmin = !!me?.isAdmin;
   const { paginatedItems, ...pagination } = usePagination(data as any[]);
   console.log('data: ', paginatedItems)
   // useEffect(() => {
@@ -90,6 +93,7 @@ function Users() {
   };
 
   if (error) return <Card><CardContent className="p-6 text-destructive">{(error as Error).message}</CardContent></Card>;
+  if (!isAdmin) return <Card><CardContent className="p-6"><p className="font-medium">Access denied</p><p className="text-sm text-muted-foreground">Only administrators can manage users.</p></CardContent></Card>;
 
   return (
     <div className="space-y-4">

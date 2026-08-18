@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { listProducts, listCategories, upsertProduct, deleteProduct, upsertCategory, deleteCategory } from "@/lib/api/coffee.functions";
+import { getMyRole } from "@/lib/api/users.functions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
@@ -49,10 +50,13 @@ function Products() {
   const del = useServerFn(deleteProduct);
   const saveCat = useServerFn(upsertCategory);
   const delCat = useServerFn(deleteCategory);
+  const fetchRole = useServerFn(getMyRole);
   const qc = useQueryClient();
 
   const { data: products = [] } = useQuery({ queryKey: ["products"], queryFn: () => fn() });
   const { data: categories = [] } = useQuery({ queryKey: ["categories"], queryFn: () => catFn() });
+  const { data: me } = useQuery({ queryKey: ["me"], queryFn: () => fetchRole() });
+  const isAdmin = !!me?.isAdmin;
   const productsPagination = usePagination(products as any[]);
 
   const [open, setOpen] = useState(false);
@@ -137,42 +141,44 @@ function Products() {
           <TabsTrigger value="categories">Categories</TabsTrigger>
         </TabsList>
         <TabsContent value="products" className="space-y-3">
-          <div className="flex justify-end">
-            <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) setForm(blank); }}>
-              <DialogTrigger asChild><Button><Plus className="mr-1 h-4 w-4" /> New Product</Button></DialogTrigger>
-              <DialogContent>
-                <DialogHeader><DialogTitle>{form.id ? "Edit" : "New"} Product</DialogTitle></DialogHeader>
-                <form onSubmit={submit} className="space-y-3">
-                  <div className="space-y-1.5"><Label>Name</Label><Input required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
-                  <div className="space-y-1.5"><Label>Description</Label><Textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} /></div>
-                  <div className="space-y-1.5">
-                    <Label>Category</Label>
-                    <Select value={form.category_id} onValueChange={v => setForm({ ...form, category_id: v })}>
-                      <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
-                      <SelectContent>{(categories as any[]).map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent>
-                    </Select>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1.5"><Label>Price</Label><Input type="number" step="0.01" min="0" required value={form.price} onChange={e => setForm({ ...form, price: e.target.value })} /></div>
-                    <div className="space-y-1.5"><Label>Stock Qty</Label><Input type="number" min="0" required value={form.stock_quantity} onChange={e => setForm({ ...form, stock_quantity: e.target.value })} /></div>
-                    <div className="space-y-1.5"><Label>Low Stock Alert</Label><Input type="number" min="0" required value={form.low_stock_threshold} onChange={e => setForm({ ...form, low_stock_threshold: e.target.value })} /></div>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>Product Image</Label>
-                    <div className="flex items-center gap-3">
-                      <ProductImage path={form.image_url} className="h-16 w-16 rounded-md border" />
-                      <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUpload(f); e.target.value = ""; }} />
-                      <Button type="button" variant="outline" disabled={uploading} onClick={() => fileRef.current?.click()}>
-                        <Upload className="mr-1 h-4 w-4" /> {uploading ? "Uploading…" : form.image_url ? "Replace" : "Upload"}
-                      </Button>
-                      {form.image_url && <Button type="button" variant="ghost" size="sm" onClick={() => setForm({ ...form, image_url: "" })}>Remove</Button>}
+          {isAdmin && (
+            <div className="flex justify-end">
+              <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) setForm(blank); }}>
+                <DialogTrigger asChild><Button><Plus className="mr-1 h-4 w-4" /> New Product</Button></DialogTrigger>
+                <DialogContent>
+                  <DialogHeader><DialogTitle>{form.id ? "Edit" : "New"} Product</DialogTitle></DialogHeader>
+                  <form onSubmit={submit} className="space-y-3">
+                    <div className="space-y-1.5"><Label>Name</Label><Input required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
+                    <div className="space-y-1.5"><Label>Description</Label><Textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} /></div>
+                    <div className="space-y-1.5">
+                      <Label>Category</Label>
+                      <Select value={form.category_id} onValueChange={v => setForm({ ...form, category_id: v })}>
+                        <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                        <SelectContent>{(categories as any[]).map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent>
+                      </Select>
                     </div>
-                  </div>
-                  <Button type="submit" className="w-full">Save</Button>
-                </form>
-              </DialogContent>
-            </Dialog>
-          </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5"><Label>Price</Label><Input type="number" step="0.01" min="0" required value={form.price} onChange={e => setForm({ ...form, price: e.target.value })} /></div>
+                      <div className="space-y-1.5"><Label>Stock Qty</Label><Input type="number" min="0" required value={form.stock_quantity} onChange={e => setForm({ ...form, stock_quantity: e.target.value })} /></div>
+                      <div className="space-y-1.5"><Label>Low Stock Alert</Label><Input type="number" min="0" required value={form.low_stock_threshold} onChange={e => setForm({ ...form, low_stock_threshold: e.target.value })} /></div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Product Image</Label>
+                      <div className="flex items-center gap-3">
+                        <ProductImage path={form.image_url} className="h-16 w-16 rounded-md border" />
+                        <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUpload(f); e.target.value = ""; }} />
+                        <Button type="button" variant="outline" disabled={uploading} onClick={() => fileRef.current?.click()}>
+                          <Upload className="mr-1 h-4 w-4" /> {uploading ? "Uploading…" : form.image_url ? "Replace" : "Upload"}
+                        </Button>
+                        {form.image_url && <Button type="button" variant="ghost" size="sm" onClick={() => setForm({ ...form, image_url: "" })}>Remove</Button>}
+                      </div>
+                    </div>
+                    <Button type="submit" className="w-full">Save</Button>
+                  </form>
+                </DialogContent>
+              </Dialog>
+            </div>
+          )}
           <Card>
             <CardContent className="p-0">
               <Table>
@@ -196,14 +202,18 @@ function Products() {
                       {/* <TableCell className="text-right">{peso(p.cost)}</TableCell> */}
                       <TableCell className="text-right">{p.stock_quantity}</TableCell>
                       <TableCell className="text-right">
-                        <Button size="icon" variant="ghost" onClick={() => edit(p)}><Pencil className="h-4 w-4" /></Button>
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild><Button size="icon" variant="ghost" className="text-destructive"><Trash2 className="h-4 w-4" /></Button></AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader><AlertDialogTitle>Delete {p.name}?</AlertDialogTitle><AlertDialogDescription>This cannot be undone.</AlertDialogDescription></AlertDialogHeader>
-                            <AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={() => remove(p.id)}>Delete</AlertDialogAction></AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
+                        {isAdmin && (
+                          <>
+                            <Button size="icon" variant="ghost" onClick={() => edit(p)}><Pencil className="h-4 w-4" /></Button>
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild><Button size="icon" variant="ghost" className="text-destructive"><Trash2 className="h-4 w-4" /></Button></AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader><AlertDialogTitle>Delete {p.name}?</AlertDialogTitle><AlertDialogDescription>This cannot be undone.</AlertDialogDescription></AlertDialogHeader>
+                                <AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={() => remove(p.id)}>Delete</AlertDialogAction></AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          </>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -217,15 +227,19 @@ function Products() {
           <Card>
             <CardHeader><CardTitle className="font-display">Categories</CardTitle></CardHeader>
             <CardContent className="space-y-3">
-              <form onSubmit={addCat} className="flex gap-2">
-                <Input placeholder="New category name" value={catName} onChange={e => setCatName(e.target.value)} />
-                <Button type="submit">Add</Button>
-              </form>
+              {isAdmin && (
+                <form onSubmit={addCat} className="flex gap-2">
+                  <Input placeholder="New category name" value={catName} onChange={e => setCatName(e.target.value)} />
+                  <Button type="submit">Add</Button>
+                </form>
+              )}
               <ul className="divide-y">
                 {(categories as any[]).map(c => (
                   <li key={c.id} className="flex items-center justify-between py-2">
                     <span>{c.name}</span>
-                    <Button size="icon" variant="ghost" className="text-destructive" onClick={async () => { try { await delCat({ data: { id: c.id } }); toast.success("Deleted"); qc.invalidateQueries({ queryKey: ["categories"] }); } catch (e: any) { toast.error(e.message); } }}><Trash2 className="h-4 w-4" /></Button>
+                    {isAdmin && (
+                      <Button size="icon" variant="ghost" className="text-destructive" onClick={async () => { try { await delCat({ data: { id: c.id } }); toast.success("Deleted"); qc.invalidateQueries({ queryKey: ["categories"] }); } catch (e: any) { toast.error(e.message); } }}><Trash2 className="h-4 w-4" /></Button>
+                    )}
                   </li>
                 ))}
               </ul>

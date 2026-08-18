@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { listProducts, adjustInventory, listInventoryTxns } from "@/lib/api/coffee.functions";
+import { getMyRole } from "@/lib/api/users.functions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
@@ -24,9 +25,12 @@ function Inventory() {
   const fn = useServerFn(listProducts);
   const txnFn = useServerFn(listInventoryTxns);
   const adjust = useServerFn(adjustInventory);
+  const fetchRole = useServerFn(getMyRole);
   const qc = useQueryClient();
   const { data: products = [] } = useQuery({ queryKey: ["products"], queryFn: () => fn() });
   const { data: txns = [] } = useQuery({ queryKey: ["inventoryTxns"], queryFn: () => txnFn() });
+  const { data: me } = useQuery({ queryKey: ["me"], queryFn: () => fetchRole() });
+  const isAdmin = !!me?.isAdmin;
   const stockPagination = usePagination(products as any[]);
   const txnPagination = usePagination(txns as any[]);
 
@@ -39,7 +43,14 @@ function Inventory() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await adjust({ data: { product_id: pid, quantity: Number(qty), transaction_type: type, reference: ref } });
+      const result = await adjust({
+        data: { product_id: pid, quantity: Number(qty), transaction_type: type, reference: ref },
+      });
+
+      if (!result?.ok) {
+        throw new Error("Inventory update did not persist to Supabase");
+      }
+
       toast.success("Inventory updated");
       qc.invalidateQueries({ queryKey: ["products"] });
       qc.invalidateQueries({ queryKey: ["inventoryTxns"] });
@@ -53,41 +64,43 @@ function Inventory() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="font-display text-3xl font-bold">Inventory</h1>
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild><Button>Adjust Stock</Button></DialogTrigger>
-          <DialogContent>
-            <DialogHeader><DialogTitle>Adjust Stock</DialogTitle></DialogHeader>
-            <form onSubmit={submit} className="space-y-3">
-              <div className="space-y-1.5">
-                <Label>Product</Label>
-                <Select value={pid} onValueChange={setPid}>
-                  <SelectTrigger><SelectValue placeholder="Select product" /></SelectTrigger>
-                  <SelectContent>{(products as any[]).map(p => <SelectItem key={p.id} value={p.id}>{p.name} (stock: {p.stock_quantity})</SelectItem>)}</SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label>Type</Label>
-                <Select value={type} onValueChange={(v: any) => setType(v)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="in">Stock In (add)</SelectItem>
-                    <SelectItem value="out">Stock Out (remove)</SelectItem>
-                    <SelectItem value="adjust">Set Exact Quantity</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label>Quantity</Label>
-                <Input type="number" min="0" required value={qty} onChange={e => setQty(e.target.value)} />
-              </div>
-              <div className="space-y-1.5">
-                <Label>Reference (optional)</Label>
-                <Input value={ref} onChange={e => setRef(e.target.value)} placeholder="e.g. PO #1234" />
-              </div>
-              <Button type="submit" className="w-full" disabled={!pid || !qty}>Save</Button>
-            </form>
-          </DialogContent>
-        </Dialog>
+        {isAdmin && (
+          <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild><Button>Adjust Stock</Button></DialogTrigger>
+            <DialogContent>
+              <DialogHeader><DialogTitle>Adjust Stock</DialogTitle></DialogHeader>
+              <form onSubmit={submit} className="space-y-3">
+                <div className="space-y-1.5">
+                  <Label>Product</Label>
+                  <Select value={pid} onValueChange={setPid}>
+                    <SelectTrigger><SelectValue placeholder="Select product" /></SelectTrigger>
+                    <SelectContent>{(products as any[]).map(p => <SelectItem key={p.id} value={p.id}>{p.name} (stock: {p.stock_quantity})</SelectItem>)}</SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Type</Label>
+                  <Select value={type} onValueChange={(v: any) => setType(v)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="in">Stock In (add)</SelectItem>
+                      <SelectItem value="out">Stock Out (remove)</SelectItem>
+                      <SelectItem value="adjust">Set Exact Quantity</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Quantity</Label>
+                  <Input type="number" min="0" required value={qty} onChange={e => setQty(e.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Reference (optional)</Label>
+                  <Input value={ref} onChange={e => setRef(e.target.value)} placeholder="e.g. PO #1234" />
+                </div>
+                <Button type="submit" className="w-full" disabled={!pid || !qty}>Save</Button>
+              </form>
+            </DialogContent>
+          </Dialog>
+        )}
       </div>
 
       <Card>

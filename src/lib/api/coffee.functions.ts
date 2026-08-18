@@ -8,6 +8,18 @@ const isCompletedSale = (sale: any) => {
   return String(status).toLowerCase() === "completed";
 };
 
+async function requireAdminRole(supabase: any, userId: string, action: string) {
+  const { data, error } = await supabase.from("user_roles").select("role").eq("user_id", userId);
+  if (error) throw new Error(error.message);
+
+  const isAdmin = (data ?? []).some((row: any) => String(row.role ?? "").toLowerCase() === "admin");
+  if (!isAdmin) throw new Error(`Forbidden: admin access required for ${action}`);
+}
+
+async function requireInventoryWriteAccess(supabase: any, userId: string) {
+  await requireAdminRole(supabase, userId, "inventory updates");
+}
+
 const enrichProductsWithSales = (products: any[], salesRows: any[]) => {
   const soldByProduct = new Map<string, number>();
   for (const sale of salesRows ?? []) {
@@ -144,7 +156,9 @@ export const upsertProduct = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d) => productSchema.parse(d))
   .handler(async ({ data, context }) => {
-    const { supabase } = context;
+    const { supabase, userId } = context;
+    await requireAdminRole(supabase, userId, "product management");
+
     if (data.id) {
       const { error } = await supabase.from("products").update({ ...data, updated_at: new Date().toISOString() }).eq("id", data.id);
       if (error) throw new Error(error.message);
@@ -159,6 +173,7 @@ export const deleteProduct = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
+    await requireAdminRole(context.supabase, context.userId, "product deletion");
     const { error } = await context.supabase.from("products").delete().eq("id", data.id);
     if (error) throw new Error(error.message);
     return { ok: true };
@@ -168,6 +183,8 @@ export const upsertCategory = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d) => z.object({ id: z.string().uuid().optional(), name: z.string().min(1).max(80) }).parse(d))
   .handler(async ({ data, context }) => {
+    await requireAdminRole(context.supabase, context.userId, "category management");
+
     if (data.id) {
       const { error } = await context.supabase.from("categories").update({ name: data.name }).eq("id", data.id);
       if (error) throw new Error(error.message);
@@ -182,6 +199,7 @@ export const deleteCategory = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
+    await requireAdminRole(context.supabase, context.userId, "category deletion");
     const { error } = await context.supabase.from("categories").delete().eq("id", data.id);
     if (error) throw new Error(error.message);
     return { ok: true };
@@ -281,16 +299,33 @@ export const adjustInventory = createServerFn({ method: "POST" })
   }).parse(d))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
+
+    await requireInventoryWriteAccess(supabase, userId);
+
     const { data: prod, error: pe } = await supabase.from("products").select("stock_quantity").eq("id", data.product_id).single();
     if (pe) throw new Error(pe.message);
-    let newStock = prod.stock_quantity;
-    if (data.transaction_type === "in") newStock += data.quantity;
-    else if (data.transaction_type === "out") newStock -= data.quantity;
-    else newStock = data.quantity;
+    if (!prod) throw new Error("Product not found");
+
+    let newStock = Number(prod.stock_quantity ?? 0);
+    if (data.transaction_type === "in") {
+      newStock += Math.abs(data.quantity);
+    } else if (data.transaction_type === "out") {
+      newStock -= Math.abs(data.quantity);
+    } else {
+      newStock = Math.max(0, data.quantity);
+    }
+
     if (newStock < 0) throw new Error("Resulting stock cannot be negative");
 
-    const { error: ue } = await supabase.from("products").update({ stock_quantity: newStock, updated_at: new Date().toISOString() }).eq("id", data.product_id);
+    const { data: updatedProduct, error: ue } = await supabase
+      .from("products")
+      .update({ stock_quantity: newStock, updated_at: new Date().toISOString() })
+      .eq("id", data.product_id)
+      .select("id, stock_quantity")
+      .single();
+
     if (ue) throw new Error(ue.message);
+    if (!updatedProduct) throw new Error("Inventory update did not affect the product row");
 
     const { error: te } = await supabase.from("inventory_transactions").insert({
       product_id: data.product_id,
@@ -299,8 +334,10 @@ export const adjustInventory = createServerFn({ method: "POST" })
       reference: data.reference ?? "manual",
       created_by: userId,
     });
+
     if (te) throw new Error(te.message);
-    return { ok: true };
+
+    return { ok: true, product_id: data.product_id, newStock, transaction_type: data.transaction_type };
   });
 
 export const listInventoryTxns = createServerFn({ method: "GET" })

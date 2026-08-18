@@ -41,7 +41,8 @@ function downloadPDF(title: string, head: string[], body: (string | number)[][])
 function parseFilterDate(value: string) {
   const [year, month, day] = value.split("-").map(Number);
   const date = new Date();
-  date.setFullYear(year, month - 1, day, 0, 0, 0, 0);
+  date.setFullYear(year, month - 1, day);
+  date.setHours(0, 0, 0, 0);
   return date;
 }
 
