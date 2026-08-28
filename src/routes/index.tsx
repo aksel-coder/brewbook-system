@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
+import { useState } from "react";
 import { getDashboardStats } from "@/lib/api/coffee.functions";
 
 export const Route = createFileRoute("/")({
@@ -70,9 +71,15 @@ const features = [
 
 function LandingPage() {
   const fn = useServerFn(getDashboardStats);
+  const [weekRange] = useState(() => {
+    const weekStart = new Date();
+    weekStart.setHours(0, 0, 0, 0);
+    weekStart.setDate(weekStart.getDate() - ((weekStart.getDay() + 6) % 7));
+    return { startDate: weekStart.toISOString(), endDate: new Date().toISOString() };
+  });
   const { data } = useQuery({
-    queryKey: ["/"],
-    queryFn: () => fn(),
+    queryKey: ["landing-weekly-sales", weekRange.startDate, weekRange.endDate],
+    queryFn: () => fn({ data: weekRange }),
     retry: (count, err) => {
       if (count < 2 && err instanceof Error && err.message.toLowerCase().includes("unauthorized")) return true;
       return count < 1;
@@ -138,14 +145,14 @@ function LandingPage() {
                 <div className="flex items-center gap-3 border-b border-border/60 pb-4">
                   <img src="/coffeLogo.jpg" alt="" className="h-12 w-12 rounded-full" />
                   <div>
-                    <p className="font-semibold">Today&apos;s Sales</p>
+                    <p className="font-semibold">This Week&apos;s Sales</p>
                   </div>
                 </div>
                 <div className="mt-5 grid grid-cols-2 gap-3">
                   {[
-                    { label: "Revenue", value: peso(data?.todaySales || 0) },
-                    { label: "Orders", value: String(data?.orderCount ?? data?.todayOrders ?? 0) },
-                    { label: "Top item", value: data?.topItem?.name ?? data?.topSeller?.name ?? "No sales yet" },
+                    { label: "Revenue", value: peso(data?.totalSales || 0) },
+                    { label: "Orders", value: String(data?.orderCount ?? 0) },
+                    { label: "Top item", value: data?.topItem?.name ?? data?.topSeller?.name ?? "No sales recorded this week." },
                     { label: "Stock alerts", value: String(data?.lowStockCount ?? 0) },
                   ].map((s) => (
                     <div key={s.label} className="rounded-xl bg-muted/50 p-4">
@@ -157,7 +164,7 @@ function LandingPage() {
                 <div className="mt-5 space-y-2">
                   {bestSellers.length === 0 ? (
                     <div className="rounded-lg border border-border/40 px-3 py-2 text-sm text-muted-foreground">
-                      No sales recorded yet.
+                      No sales recorded this week.
                     </div>
                   ) : bestSellers.map((item: any) => (
                     <div
@@ -165,7 +172,7 @@ function LandingPage() {
                       className="flex items-center justify-between rounded-lg border border-border/40 px-3 py-2 text-sm"
                     >
                       <span>{item.name}</span>
-                      <span className="font-medium">{peso(item.price || 0)}</span>
+                      <span className="font-medium">{item.qty} units</span>
                     </div>
                   ))}
                 </div>

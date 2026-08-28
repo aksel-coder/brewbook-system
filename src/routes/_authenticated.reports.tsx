@@ -107,11 +107,21 @@ function Reports() {
     }
 
     const day = new Date(now); day.setHours(0, 0, 0, 0);
-    const week = new Date(now); week.setDate(week.getDate() - 7);
+    const currentDate = new Date(now);
+    const weekStart = new Date(currentDate);
+    weekStart.setHours(0, 0, 0, 0);
+    weekStart.setDate(currentDate.getDate() - (currentDate.getDay() === 0 ? 6 : currentDate.getDay() - 1));
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekStart.getDate() + 6);
+    weekEnd.setHours(23, 59, 59, 999);
     const month = new Date(now); month.setMonth(month.getMonth() - 1);
     const inRange = (d: Date, since: Date) => d >= since;
     const filter = (since: Date) => filteredSales.filter(s => inRange(new Date(s.sale_date), since));
-    return { daily: filter(day), weekly: filter(week), monthly: filter(month) };
+    const weekly = filteredSales.filter(s => {
+      const saleDate = new Date(s.sale_date);
+      return saleDate >= weekStart && saleDate <= weekEnd;
+    });
+    return { daily: filter(day), weekly, monthly: filter(month) };
   }, [filteredSales, dateFrom, dateTo]);
 
   const bestSellers = useMemo(() => {

@@ -40,38 +40,42 @@ const enrichProductsWithSales = (products: any[], salesRows: any[]) => {
 // ============ DASHBOARD ============
 export const getDashboardStats = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
+  .inputValidator((d) => z.object({
+    startDate: z.string().datetime(),
+    endDate: z.string().datetime(),
+  }).parse(d))
+  .handler(async ({ data, context }) => {
     const { supabase } = context;
     const today = new Date(); today.setHours(0, 0, 0, 0);
-    const [salesAll, salesToday, products, recent, last7, completedSales] = await Promise.all([
-      supabase.from("sales").select("id, total_amount"),
+    const salesInRangePromise = (async () => {
+      const all: any[] = [];
+      for (let from = 0; ; from += 1000) {
+        const result = await supabase.from("sales")
+          .select("id, total_amount, sale_date, sale_items(quantity, product_id, unit_price, products(name, price))")
+          .gte("sale_date", data.startDate)
+          .lte("sale_date", data.endDate)
+          .range(from, from + 999);
+        if (result.error) throw new Error(result.error.message);
+        all.push(...(result.data ?? []));
+        if ((result.data?.length ?? 0) < 1000) break;
+      }
+      return { data: all, error: null };
+    })();
+    const [salesInRange, salesToday, products, recent, completedSales] = await Promise.all([
+      salesInRangePromise,
       supabase.from("sales").select("id, total_amount").gte("sale_date", today.toISOString()),
       supabase.from("products").select("id, name, stock_quantity, low_stock_threshold").eq("is_active", true),
-      supabase.from("sales").select("id, receipt_number, total_amount, sale_date").order("sale_date", { ascending: false }).limit(5),
-      supabase.from("sales").select("total_amount, sale_date").gte("sale_date", new Date(Date.now() - 7 * 86400000).toISOString()),
+      supabase.from("sales").select("id, receipt_number, total_amount, sale_date").gte("sale_date", data.startDate).lte("sale_date", data.endDate).order("sale_date", { ascending: false }).limit(5),
       supabase.from("sales").select("id, sale_items(quantity, product_id)").order("sale_date", { ascending: false }),
     ]);
 
-    for (const result of [salesAll, salesToday, products, recent, last7, completedSales]) {
+    for (const result of [salesInRange, salesToday, products, recent, completedSales]) {
       if (result.error) throw new Error(result.error.message);
     }
 
-    const bestSellers: any[] = [];
-    let bestSellersFrom = 0;
-    while (true) {
-      const { data, error } = await supabase
-        .from("sale_items")
-        .select("quantity, product_id, unit_price, products(name, price)")
-        .range(bestSellersFrom, bestSellersFrom + 999);
-      if (error) throw new Error(error.message);
-      bestSellers.push(...(data ?? []));
-      if ((data?.length ?? 0) < 1000) break;
-      bestSellersFrom += 1000;
-    }
-
-    const totalSales = (salesAll.data ?? []).reduce((s, r) => s + Number(r.total_amount), 0);
+    const totalSales = (salesInRange.data ?? []).reduce((s, r) => s + Number(r.total_amount), 0);
     const todaySales = (salesToday.data ?? []).reduce((s, r) => s + Number(r.total_amount), 0);
-    const orderCount = salesToday.data?.length ?? 0;
+    const orderCount = salesInRange.data?.length ?? 0;
     const productsWithSales = enrichProductsWithSales(products.data ?? [], completedSales.data ?? []);
     const totalProducts = productsWithSales.length;
     const totalStock = productsWithSales.reduce((s, p) => s + (p.stock_quantity ?? 0), 0);
@@ -79,23 +83,25 @@ export const getDashboardStats = createServerFn({ method: "GET" })
 
     // best sellers aggregation
     const bsMap = new Map<string, { name: string; qty: number; price: number }>();
-    for (const row of bestSellers) {
-      const name = row.products?.name ?? "Unknown";
-      const price = Number(row.products?.price ?? row.unit_price ?? 0);
-      const cur = bsMap.get(row.product_id) ?? { name, qty: 0, price };
-      cur.qty += Number(row.quantity ?? 0);
-      if (price > 0) cur.price = price;
-      bsMap.set(row.product_id, cur);
+    for (const sale of salesInRange.data ?? []) {
+      for (const row of sale.sale_items ?? []) {
+        const name = row.products?.name ?? "Unknown";
+        const price = Number(row.products?.price ?? row.unit_price ?? 0);
+        const cur = bsMap.get(row.product_id) ?? { name, qty: 0, price };
+        cur.qty += Number(row.quantity ?? 0);
+        if (price > 0) cur.price = price;
+        bsMap.set(row.product_id, cur);
+      }
     }
     const best = Array.from(bsMap.values()).sort((a, b) => b.qty - a.qty).slice(0, 5);
 
-    // sales by day (last 7)
     const dayMap = new Map<string, number>();
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date(Date.now() - i * 86400000);
-      dayMap.set(d.toISOString().slice(0, 10), 0);
+    const startDay = new Date(data.startDate);
+    const endDay = new Date(data.endDate);
+    for (const cursor = new Date(startDay); cursor <= endDay; cursor.setUTCDate(cursor.getUTCDate() + 1)) {
+      dayMap.set(cursor.toISOString().slice(0, 10), 0);
     }
-    for (const r of last7.data ?? []) {
+    for (const r of salesInRange.data ?? []) {
       const k = new Date(r.sale_date).toISOString().slice(0, 10);
       dayMap.set(k, (dayMap.get(k) ?? 0) + Number(r.total_amount));
     }

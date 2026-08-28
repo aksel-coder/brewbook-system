@@ -52,11 +52,23 @@ const features = [
 const formatPeso = (n: number) =>
   "₱" + Number(n).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+function getCurrentWeekRange() {
+  const now = new Date();
+  const start = new Date(now);
+  start.setHours(0, 0, 0, 0);
+  start.setDate(start.getDate() - ((start.getDay() + 6) % 7));
+  const end = new Date(start);
+  end.setDate(end.getDate() + 6);
+  end.setHours(23, 59, 59, 999);
+  return { startDate: start.toISOString(), endDate: end.toISOString() };
+}
+
 export function CoffeeZoneLandingPage() {
   const fn = useServerFn(getDashboardStats);
+  const week = getCurrentWeekRange();
   const { data } = useQuery({
-    queryKey: ["dashboard"],
-    queryFn: () => fn(),
+    queryKey: ["landing-weekly-sales", week.startDate, week.endDate],
+    queryFn: () => fn({ data: week }),
     retry: (count, err) => {
       if (count < 2 && err instanceof Error && err.message.toLowerCase().includes("unauthorized")) {
         return true;
@@ -142,12 +154,12 @@ export function CoffeeZoneLandingPage() {
                 <div className="flex items-center gap-3 border-b border-border/60 pb-4">
                   <img src={logoSrc} alt="" className="h-12 w-12 rounded-full" />
                   <div>
-                    <p className="font-semibold">Today's Sales</p>
+                    <p className="font-semibold">This Week's Sales</p>
                   </div>
                 </div>
                 <div className="mt-5 grid grid-cols-2 gap-3">
                   {[
-                    { label: "Revenue", value: formatPeso(data?.todaySales || 0) },
+                    { label: "Revenue", value: formatPeso(data?.totalSales || 0) },
                     { label: "Orders", value: data?.orderCount?.toString() ?? "0" },
                     { label: "Top item", value: data?.topItem?.name ?? "No sales yet" },
                     { label: "Stock alerts", value: (data?.lowStockCount ?? 0).toString() },
@@ -165,12 +177,12 @@ export function CoffeeZoneLandingPage() {
                       className="flex items-center justify-between rounded-lg border border-border/40 px-3 py-2 text-sm"
                     >
                       <span>{item.name}</span>
-                      <span className="font-medium">{formatPeso(item.price ?? 0)}</span>
+                      <span className="font-medium">{item.qty} units</span>
                     </div>
                   ))}
                   {(!data?.best || data.best.length === 0) && (
                     <div className="rounded-lg border border-dashed border-border/40 px-3 py-2 text-sm text-muted-foreground">
-                      No sales data available yet.
+                      No sales recorded this week.
                     </div>
                   )}
                 </div>
