@@ -97,7 +97,7 @@ function SalesPOS() {
       <div className="flex items-end justify-between gap-2">
         <div>
           <h1 className="font-display text-3xl font-bold">Point of Sale</h1>
-          <p className="text-sm text-muted-foreground">Select products to add to cart.</p>
+          
         </div>
       </div>
 

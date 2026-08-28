@@ -51,7 +51,7 @@ function Dashboard() {
     <div className="space-y-6">
       <div>
         <h1 className="font-display text-3xl font-bold">Dashboard</h1>
-        <p className="text-sm text-muted-foreground">Overview of your coffee shop operations.</p>
+
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
