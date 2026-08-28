@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { ImageIcon, Pencil, Plus, Trash2, Upload } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { DataTablePagination } from "@/components/data-table-pagination";
@@ -57,14 +57,24 @@ function Products() {
   const { data: categories = [] } = useQuery({ queryKey: ["categories"], queryFn: () => catFn() });
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: () => fetchRole() });
   const isAdmin = !!me?.isAdmin;
-  const productsPagination = usePagination(products as any[]);
 
   const [open, setOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const [form, setForm] = useState(blank);
   const [catOpen, setCatOpen] = useState(false);
   const [catName, setCatName] = useState("");
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  const filteredProducts = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return products as any[];
+    return (products as any[]).filter((product) =>
+      product.name.toLowerCase().includes(query) ||
+      product.categories?.name?.toLowerCase().includes(query),
+    );
+  }, [products, searchQuery]);
+  const productsPagination = usePagination(filteredProducts);
 
   const handleUpload = async (file: File) => {
     if (!file.type.startsWith("image/")) { toast.error("Please choose an image file"); return; }
@@ -141,8 +151,14 @@ function Products() {
           <TabsTrigger value="categories">Categories</TabsTrigger>
         </TabsList>
         <TabsContent value="products" className="space-y-3">
-          {isAdmin && (
-            <div className="flex justify-end">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <Input
+              className="sm:max-w-sm"
+              placeholder="Search products..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+            {isAdmin && (
               <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) setForm(blank); }}>
                 <DialogTrigger asChild><Button><Plus className="mr-1 h-4 w-4" /> New Product</Button></DialogTrigger>
                 <DialogContent>
@@ -177,8 +193,8 @@ function Products() {
                   </form>
                 </DialogContent>
               </Dialog>
-            </div>
-          )}
+            )}
+          </div>
           <Card>
             <CardContent className="p-0">
               <Table>
@@ -193,7 +209,11 @@ function Products() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {productsPagination.paginatedItems.map(p => (
+                  {productsPagination.paginatedItems.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={6} className="h-24 text-center">No products found.</TableCell>
+                    </TableRow>
+                  ) : productsPagination.paginatedItems.map(p => (
                     <TableRow key={p.id}>
                       <TableCell><ProductImage path={p.image_url} className="h-10 w-10 rounded-md border" /></TableCell>
                       <TableCell className="font-medium">{p.name}</TableCell>
