@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { listProducts, adjustInventory, listInventoryTxns } from "@/lib/api/coffee.functions";
+import { listProducts, listInventoryItems, adjustIngredient, adjustInventory, listInventoryMovements } from "@/lib/api/coffee.functions";
 import { getMyRole } from "@/lib/api/users.functions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { DataTablePagination } from "@/components/data-table-pagination";
 import { usePagination } from "@/hooks/use-pagination";
@@ -22,41 +22,71 @@ export const Route = createFileRoute("/_authenticated/inventory")({
 });
 
 function Inventory() {
-  const fn = useServerFn(listProducts);
-  const txnFn = useServerFn(listInventoryTxns);
-  const adjust = useServerFn(adjustInventory);
+  const productsFn = useServerFn(listProducts);
+  const fn = useServerFn(listInventoryItems);
+  const txnFn = useServerFn(listInventoryMovements);
+  const adjust = useServerFn(adjustIngredient);
+  const adjustProduct = useServerFn(adjustInventory);
   const fetchRole = useServerFn(getMyRole);
   const qc = useQueryClient();
-  const { data: products = [] } = useQuery({ queryKey: ["products"], queryFn: () => fn() });
-  const { data: txns = [] } = useQuery({ queryKey: ["inventoryTxns"], queryFn: () => txnFn() });
+  const { data: products = [] } = useQuery({ queryKey: ["products"], queryFn: () => productsFn() });
+  const { data: items = [] } = useQuery({ queryKey: ["inventoryItems"], queryFn: () => fn() });
+  const { data: txns = [] } = useQuery({ queryKey: ["inventoryMovements"], queryFn: () => txnFn() });
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: () => fetchRole() });
   const isAdmin = !!me?.isAdmin;
-  const stockPagination = usePagination(products as any[]);
+  const stockRows = useMemo(() => [
+    ...(items as any[]).map((item) => ({
+      ...item,
+      kind: "ingredient",
+      category: "Raw Ingredient",
+    })),
+    ...(products as any[]).map((product) => ({
+      ...product,
+      id: `product-${product.id}`,
+      kind: "product",
+      category: product.categories?.name ?? "—",
+      display_id: product.id,
+    })),
+  ], [items, products]);
+  const stockPagination = usePagination(stockRows);
   const txnPagination = usePagination(txns as any[]);
 
   const [open, setOpen] = useState(false);
-  const [pid, setPid] = useState("");
-  const [type, setType] = useState<"in" | "out" | "adjust">("in");
+  const [itemId, setItemId] = useState("");
+  const [type, setType] = useState<"In" | "Out" | "Waste">("In");
   const [qty, setQty] = useState("");
   const [ref, setRef] = useState("");
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const result = await adjust({
-        data: { product_id: pid, quantity: Number(qty), transaction_type: type, reference: ref },
-      });
+      const selectedItem = stockRows.find((item: any) => item.id === itemId);
+      if (!selectedItem) throw new Error("Please select an inventory item");
+
+      const result = selectedItem.kind === "ingredient"
+        ? await adjust({
+          data: { item_id: selectedItem.id, quantity: Number(qty), type, reference: ref },
+        })
+        : await adjustProduct({
+          data: {
+            product_id: selectedItem.display_id,
+            quantity: Number(qty),
+            transaction_type: type === "In" ? "in" : type === "Out" || type === "Waste" ? "out" : "adjust",
+            reference: ref,
+          },
+        });
 
       if (!result?.ok) {
         throw new Error("Inventory update did not persist to Supabase");
       }
 
       toast.success("Inventory updated");
+      qc.invalidateQueries({ queryKey: ["inventoryItems"] });
+      qc.invalidateQueries({ queryKey: ["inventoryMovements"] });
       qc.invalidateQueries({ queryKey: ["products"] });
-      qc.invalidateQueries({ queryKey: ["inventoryTxns"] });
       qc.invalidateQueries({ queryKey: ["dashboard"] });
       qc.invalidateQueries({ queryKey: ["sales"] });
-      setOpen(false); setPid(""); setQty(""); setRef("");
+      setOpen(false); setItemId(""); setQty(""); setRef("");
     } catch (e: any) { toast.error(e.message); }
   };
 
@@ -67,14 +97,14 @@ function Inventory() {
         {isAdmin && (
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild><Button>Adjust Stock</Button></DialogTrigger>
-            <DialogContent>
+            <DialogContent className="overflow-y-auto">
               <DialogHeader><DialogTitle>Adjust Stock</DialogTitle></DialogHeader>
               <form onSubmit={submit} className="space-y-3">
                 <div className="space-y-1.5">
-                  <Label>Product</Label>
-                  <Select value={pid} onValueChange={setPid}>
-                    <SelectTrigger><SelectValue placeholder="Select product" /></SelectTrigger>
-                    <SelectContent>{(products as any[]).map(p => <SelectItem key={p.id} value={p.id}>{p.name} (stock: {p.stock_quantity})</SelectItem>)}</SelectContent>
+                  <Label>Inventory Item</Label>
+                  <Select value={itemId} onValueChange={setItemId}>
+                    <SelectTrigger><SelectValue placeholder="Select item" /></SelectTrigger>
+                    <SelectContent>{stockRows.map((item: any) => <SelectItem key={item.id} value={item.id}>{item.name} ({item.kind === "ingredient" ? `stock: ${item.current_stock} ${item.unit}` : `stock: ${item.stock_quantity} pcs`})</SelectItem>)}</SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-1.5">
@@ -82,9 +112,9 @@ function Inventory() {
                   <Select value={type} onValueChange={(v: any) => setType(v)}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="in">Stock In (add)</SelectItem>
-                      <SelectItem value="out">Stock Out (remove)</SelectItem>
-                      <SelectItem value="adjust">Set Exact Quantity</SelectItem>
+                      <SelectItem value="In">Stock In (add)</SelectItem>
+                      <SelectItem value="Out">Stock Out (remove)</SelectItem>
+                      <SelectItem value="Waste">Waste (remove)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -96,7 +126,12 @@ function Inventory() {
                   <Label>Reference (optional)</Label>
                   <Input value={ref} onChange={e => setRef(e.target.value)} placeholder="e.g. PO #1234" />
                 </div>
-                <Button type="submit" className="w-full" disabled={!pid || !qty}>Save</Button>
+                <div className="sticky bottom-0 z-10 -mx-5 mt-4 border-t bg-background px-5 pb-1 pt-3 sm:-mx-6 sm:px-6">
+                  <div className="flex justify-end gap-2">
+                    <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+                    <Button type="submit" disabled={!itemId || !qty}>Save</Button>
+                  </div>
+                </div>
               </form>
             </DialogContent>
           </Dialog>
@@ -109,28 +144,31 @@ function Inventory() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Product</TableHead>
+                <TableHead>Item Name</TableHead>
                 <TableHead>Category</TableHead>
-                <TableHead className="text-right">Stock</TableHead>
-                <TableHead className="text-right">Sold</TableHead>
-                <TableHead className="text-right">Threshold</TableHead>
+                <TableHead className="text-right">Initial Stock / Stock Qty</TableHead>
+                <TableHead className="text-right">Used</TableHead>
+                <TableHead className="text-right">Remaining Stock</TableHead>
+                <TableHead>Unit</TableHead>
                 <TableHead>Status</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {stockPagination.paginatedItems.map(p => {
-                const low = p.stock_quantity <= p.low_stock_threshold;
-                const out = p.stock_quantity === 0;
+              {stockPagination.paginatedItems.map((item: any) => {
+                const isIngredient = item.kind === "ingredient";
+                const remainingStock = isIngredient ? item.current_stock : item.stock_quantity;
+                const low = Number(remainingStock) <= Number(item.low_stock_threshold ?? 0);
                 return (
-                  <TableRow key={p.id}>
-                    <TableCell className="font-medium">{p.name}</TableCell>
-                    <TableCell>{p.categories?.name ?? "—"}</TableCell>
-                    <TableCell className="text-right">{p.stock_quantity}</TableCell>
-                    <TableCell className="text-right">{p.sold_quantity ?? 0}</TableCell>
-                    <TableCell className="text-right text-muted-foreground">{p.low_stock_threshold}</TableCell>
+                  <TableRow key={item.id}>
+                    <TableCell className="font-medium">{item.name}</TableCell>
+                    <TableCell>{item.category}</TableCell>
+                    <TableCell className="text-right">{isIngredient ? item.initial_stock : "—"}</TableCell>
+                    <TableCell className="text-right">{isIngredient ? item.total_used : "—"}</TableCell>
+                    <TableCell className="text-right">{remainingStock}</TableCell>
+                    <TableCell>{isIngredient ? item.unit : "pcs"}</TableCell>
                     <TableCell>
-                      <Badge variant={out ? "destructive" : low ? "destructive" : "secondary"}>
-                        {out ? "Out of stock" : low ? "Low" : "Healthy"}
+                      <Badge variant={low ? "destructive" : "secondary"}>
+                        {low ? "Low Stock" : "Healthy"}
                       </Badge>
                     </TableCell>
                   </TableRow>
@@ -149,7 +187,7 @@ function Inventory() {
             <TableHeader>
               <TableRow>
                 <TableHead>When</TableHead>
-                <TableHead>Product</TableHead>
+                <TableHead>Item</TableHead>
                 <TableHead>Type</TableHead>
                 <TableHead className="text-right">Qty</TableHead>
                 <TableHead>Reference</TableHead>
@@ -159,9 +197,9 @@ function Inventory() {
               {txnPagination.paginatedItems.map((t: any) => (
                 <TableRow key={t.id}>
                   <TableCell className="text-xs">{new Date(t.created_at).toLocaleString()}</TableCell>
-                  <TableCell>{t.products?.name}</TableCell>
-                  <TableCell><Badge variant="outline" className="capitalize">{t.transaction_type}</Badge></TableCell>
-                  <TableCell className={`text-right font-medium ${t.quantity < 0 ? "text-destructive" : "text-success"}`}>{t.quantity > 0 ? "+" : ""}{t.quantity}</TableCell>
+                  <TableCell>{t.item_name ?? t.inventory_items?.name ?? "—"}</TableCell>
+                  <TableCell><Badge variant="outline" className="capitalize">{t.type}</Badge></TableCell>
+                  <TableCell className={`text-right font-medium ${t.qty < 0 ? "text-destructive" : "text-success"}`}>{t.qty > 0 ? "+" : ""}{t.qty} {t.unit ?? t.inventory_items?.unit}</TableCell>
                   <TableCell className="text-xs text-muted-foreground">{t.reference}</TableCell>
                 </TableRow>
               ))}

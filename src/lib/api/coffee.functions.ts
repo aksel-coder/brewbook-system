@@ -128,15 +128,30 @@ export const getDashboardStats = createServerFn({ method: "GET" })
 export const listProducts = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const [productsResult, salesResult] = await Promise.all([
+    const [productsResult, salesResult, recipesResult] = await Promise.all([
       context.supabase.from("products").select("*, categories(id, name)").order("name"),
       context.supabase.from("sales").select("id, sale_items(quantity, product_id)").order("sale_date", { ascending: false }),
+      context.supabase.from("product_recipes").select("product_id, quantity_required, inventory_items(current_stock)"),
     ]);
 
     if (productsResult.error) throw new Error(productsResult.error.message);
     if (salesResult.error) throw new Error(salesResult.error.message);
+    if (recipesResult.error) throw new Error(recipesResult.error.message);
 
-    return enrichProductsWithSales(productsResult.data ?? [], salesResult.data ?? []);
+    const recipesByProduct = new Map<string, any[]>();
+    for (const recipe of recipesResult.data ?? []) {
+      const current = recipesByProduct.get(recipe.product_id) ?? [];
+      current.push(recipe);
+      recipesByProduct.set(recipe.product_id, current);
+    }
+
+    return enrichProductsWithSales(productsResult.data ?? [], salesResult.data ?? []).map((product) => {
+      const recipes = recipesByProduct.get(product.id);
+      const availableStock = recipes?.length
+        ? Math.min(...recipes.map((recipe) => Math.floor(Number(recipe.inventory_items?.current_stock ?? 0) / Number(recipe.quantity_required))))
+        : Number(product.stock_quantity ?? 0);
+      return { ...product, available_stock: Math.max(0, availableStock) };
+    });
   });
 
 export const listCategories = createServerFn({ method: "GET" })
@@ -147,15 +162,78 @@ export const listCategories = createServerFn({ method: "GET" })
     return data ?? [];
   });
 
+export const listInventoryItems = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { data, error } = await context.supabase.from("inventory_items").select("*").order("name");
+    if (error) throw new Error(error.message);
+    return data ?? [];
+  });
+
+export const upsertInventoryItem = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => z.object({
+    id: z.string().uuid().optional(),
+    name: z.string().min(1).max(120),
+    unit: z.enum(["g", "ml", "pcs", "oz"]),
+    initial_stock: z.number().min(0),
+    low_stock_threshold: z.number().min(0),
+  }).parse(d))
+  .handler(async ({ data, context }) => {
+    await requireAdminRole(context.supabase, context.userId, "ingredient management");
+    const payload = data.id
+      ? { name: data.name, unit: data.unit, low_stock_threshold: data.low_stock_threshold }
+      : { ...data, current_stock: data.initial_stock };
+    const result = data.id
+      ? await context.supabase.from("inventory_items").update(payload).eq("id", data.id)
+      : await context.supabase.from("inventory_items").insert(payload);
+    if (result.error) throw new Error(result.error.message);
+    return { ok: true };
+  });
+
+export const deleteInventoryItem = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    await requireAdminRole(context.supabase, context.userId, "ingredient deletion");
+    const { error } = await context.supabase.from("inventory_items").delete().eq("id", data.id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const listProductRecipes = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => z.object({ product_id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { data: recipes, error } = await context.supabase
+      .from("product_recipes").select("item_id, quantity_required, inventory_items(id, name, unit)").eq("product_id", data.product_id);
+    if (error) throw new Error(error.message);
+    return recipes ?? [];
+  });
+
+export const listAllProductRecipes = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { data, error } = await context.supabase
+      .from("product_recipes")
+      .select("product_id, item_id, quantity_required, inventory_items(name, unit)");
+    if (error) throw new Error(error.message);
+    return data ?? [];
+  });
+
 const productSchema = z.object({
   id: z.string().uuid().optional(),
   name: z.string().min(1).max(120),
   description: z.string().max(1000).optional().default(""),
   category_id: z.string().uuid().nullable(),
   price: z.number().min(0),
-  stock_quantity: z.number().int().min(0),
+  stock_quantity: z.preprocess(
+    (value) => value == null || value === "" || (typeof value === "number" && (!Number.isFinite(value) || value < 0)) ? 0 : value,
+    z.number().int().min(0).default(0),
+  ),
   low_stock_threshold: z.number().int().min(0).default(10),
   image_url: z.string().max(2000).optional().nullable(),
+  recipes: z.array(z.object({ item_id: z.string().uuid(), quantity_required: z.number().positive() })).default([]),
 });
 
 export const upsertProduct = createServerFn({ method: "POST" })
@@ -165,12 +243,26 @@ export const upsertProduct = createServerFn({ method: "POST" })
     const { supabase, userId } = context;
     await requireAdminRole(supabase, userId, "product management");
 
+    const { recipes, ...productData } = data;
+    let productId = data.id;
+
     if (data.id) {
-      const { error } = await supabase.from("products").update({ ...data, updated_at: new Date().toISOString() }).eq("id", data.id);
+      const { error } = await supabase.from("products").update({ ...productData, updated_at: new Date().toISOString() }).eq("id", data.id);
       if (error) throw new Error(error.message);
     } else {
-      const { error } = await supabase.from("products").insert(data);
+      const { data: product, error } = await supabase.from("products").insert(productData).select("id").single();
       if (error) throw new Error(error.message);
+      productId = product.id;
+    }
+
+    if (!productId) throw new Error("Product id was not returned");
+    const { error: deleteRecipesError } = await supabase.from("product_recipes").delete().eq("product_id", productId);
+    if (deleteRecipesError) throw new Error(deleteRecipesError.message);
+    if (recipes.length > 0) {
+      const { error: recipeError } = await supabase.from("product_recipes").insert(
+        recipes.map((recipe) => ({ ...recipe, product_id: productId }))
+      );
+      if (recipeError) throw new Error(recipeError.message);
     }
     return { ok: true };
   });
@@ -238,11 +330,16 @@ export const createSale = createServerFn({ method: "POST" })
       .in("id", productIds);
     if (productLookupError) throw new Error(productLookupError.message);
 
+      const { data: recipesData, error: recipesError } = await supabase
+        .from("product_recipes").select("product_id").in("product_id", productIds);
+      if (recipesError) throw new Error(recipesError.message);
+      const recipeProductIds = new Set((recipesData ?? []).map((recipe) => recipe.product_id));
+
     const productMap = new Map((productsData ?? []).map((product) => [product.id, product]));
     for (const item of data.items) {
       const current = productMap.get(item.product_id);
       if (!current) throw new Error("Product not found");
-      if (Number(current.stock_quantity ?? 0) < item.quantity) {
+        if (!recipeProductIds.has(item.product_id) && Number(current.stock_quantity ?? 0) < item.quantity) {
         throw new Error(`${current.name} has insufficient stock`);
       }
     }
@@ -260,14 +357,107 @@ export const createSale = createServerFn({ method: "POST" })
     if (ie) throw new Error(ie.message);
 
     for (const item of data.items) {
+      const { data: recipeRows, error: recipeLookupError } = await supabase
+        .from("product_recipes")
+        .select("item_id, quantity_required")
+        .eq("product_id", item.product_id);
+
+      if (recipeLookupError) {
+        await supabase.from("sale_items").delete().eq("sale_id", sale.id);
+        await supabase.from("sales").delete().eq("id", sale.id);
+        throw new Error(recipeLookupError.message);
+      }
+
+      const recipes = recipeRows ?? [];
+      if (recipes.length > 0) {
+        for (const recipe of recipes) {
+          const required = Number(recipe.quantity_required ?? 0) * item.quantity;
+          const { data: inventoryRow, error: inventoryReadError } = await supabase
+            .from("inventory_items")
+            .select("id, name, current_stock, total_used")
+            .eq("id", recipe.item_id)
+            .single();
+
+          if (inventoryReadError) {
+            await supabase.from("sale_items").delete().eq("sale_id", sale.id);
+            await supabase.from("sales").delete().eq("id", sale.id);
+            throw new Error(inventoryReadError.message);
+          }
+
+          const currentStock = Number(inventoryRow?.current_stock ?? 0);
+          if (currentStock < required) {
+            await supabase.from("sale_items").delete().eq("sale_id", sale.id);
+            await supabase.from("sales").delete().eq("id", sale.id);
+            throw new Error(`Insufficient ingredient stock for ${inventoryRow?.name ?? "recipe ingredient"}`);
+          }
+
+          const nextStock = currentStock - required;
+          const nextUsed = Number(inventoryRow?.total_used ?? 0) + required;
+          const { error: itemUpdateError } = await supabase
+            .from("inventory_items")
+            .update({ current_stock: nextStock, total_used: nextUsed })
+            .eq("id", recipe.item_id);
+
+          if (itemUpdateError) {
+            await supabase.from("sale_items").delete().eq("sale_id", sale.id);
+            await supabase.from("sales").delete().eq("id", sale.id);
+            throw new Error(itemUpdateError.message);
+          }
+
+          const { error: movementError } = await supabase.from("inventory_movements").insert({
+            item_id: recipe.item_id,
+            type: "Sale",
+            qty: -required,
+            reference: receipt,
+          });
+
+          if (movementError) {
+            await supabase.from("sale_items").delete().eq("sale_id", sale.id);
+            await supabase.from("sales").delete().eq("id", sale.id);
+            throw new Error(movementError.message);
+          }
+        }
+        continue;
+      }
+
       const current = productMap.get(item.product_id);
-      if (!current) continue;
-      const newStock = Number(current.stock_quantity ?? 0) - item.quantity;
-      const { error: ue } = await supabase.from("products").update({
-        stock_quantity: newStock,
-        updated_at: new Date().toISOString(),
-      }).eq("id", item.product_id);
-      if (ue) throw new Error(ue.message);
+      if (!current) {
+        await supabase.from("sale_items").delete().eq("sale_id", sale.id);
+        await supabase.from("sales").delete().eq("id", sale.id);
+        throw new Error("Product not found");
+      }
+
+      if (Number(current.stock_quantity ?? 0) < item.quantity) {
+        await supabase.from("sale_items").delete().eq("sale_id", sale.id);
+        await supabase.from("sales").delete().eq("id", sale.id);
+        throw new Error(`${current.name} has insufficient stock`);
+      }
+
+      const nextProductStock = Number(current.stock_quantity ?? 0) - item.quantity;
+      const { error: productUpdateError } = await supabase
+        .from("products")
+        .update({ stock_quantity: nextProductStock, updated_at: new Date().toISOString() })
+        .eq("id", item.product_id);
+
+      if (productUpdateError) {
+        await supabase.from("sale_items").delete().eq("sale_id", sale.id);
+        await supabase.from("sales").delete().eq("id", sale.id);
+        throw new Error(productUpdateError.message);
+      }
+
+      const { error: productTxnError } = await supabase.from("inventory_transactions").insert({
+        product_id: item.product_id,
+        transaction_type: "sale",
+        quantity: -item.quantity,
+        reference: receipt,
+        created_by: userId,
+      });
+
+      if (productTxnError) {
+        await supabase.from("sale_items").delete().eq("sale_id", sale.id);
+        await supabase.from("sales").delete().eq("id", sale.id);
+        throw new Error(productTxnError.message);
+      }
     }
 
     return { sale, items: data.items, subtotal, tax, total };
@@ -295,6 +485,63 @@ export const listSales = createServerFn({ method: "GET" })
   });
 
 // ============ INVENTORY ============
+export const adjustIngredient = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => z.object({
+    item_id: z.string().uuid(),
+    quantity: z.number().min(0),
+    type: z.enum(["In", "Out", "Waste"]),
+    reference: z.string().max(200).optional(),
+  }).parse(d))
+  .handler(async ({ data, context }) => {
+    await requireInventoryWriteAccess(context.supabase, context.userId);
+    const amount = data.type === "In" ? data.quantity : -data.quantity;
+    const { data: item, error: readError } = await context.supabase.from("inventory_items")
+      .select("current_stock").eq("id", data.item_id).single();
+    if (readError) throw new Error(readError.message);
+    const currentStock = Number(item.current_stock ?? 0);
+    if (currentStock + amount < 0) throw new Error("Resulting stock cannot be negative");
+    const { error: updateError } = await context.supabase.from("inventory_items")
+      .update({ current_stock: currentStock + amount }).eq("id", data.item_id);
+    if (updateError) throw new Error(updateError.message);
+    const { error: movementError } = await context.supabase.from("inventory_movements").insert({
+      item_id: data.item_id, type: data.type, qty: amount, reference: data.reference ?? "manual",
+    });
+    if (movementError) throw new Error(movementError.message);
+    return { ok: true };
+  });
+
+export const listInventoryMovements = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const [ingredientMovements, productTransactions] = await Promise.all([
+      context.supabase.from("inventory_movements")
+        .select("*, inventory_items!left(name, unit)").order("created_at", { ascending: false }),
+      context.supabase.from("inventory_transactions")
+        .select("id, product_id, transaction_type, quantity, reference, created_at, products!left(name)")
+        .order("created_at", { ascending: false }),
+    ]);
+    if (ingredientMovements.error) throw new Error(ingredientMovements.error.message);
+    if (productTransactions.error) throw new Error(productTransactions.error.message);
+
+    return [
+      ...(ingredientMovements.data ?? []).map((movement) => ({
+        ...movement,
+        item_name: movement.inventory_items?.name ?? "Unknown ingredient",
+        unit: movement.inventory_items?.unit ?? "",
+      })),
+      ...(productTransactions.data ?? []).map((transaction) => ({
+        id: `product-${transaction.id}`,
+        created_at: transaction.created_at,
+        item_name: transaction.products?.name ?? "Unknown product",
+        type: transaction.transaction_type === "sale" ? "Sale" : transaction.transaction_type,
+        qty: transaction.quantity,
+        reference: transaction.reference,
+        unit: "pcs",
+      })),
+    ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  });
+
 export const adjustInventory = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d) => z.object({

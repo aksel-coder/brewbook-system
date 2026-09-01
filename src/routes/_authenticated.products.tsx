@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { listProducts, listCategories, upsertProduct, deleteProduct, upsertCategory, deleteCategory } from "@/lib/api/coffee.functions";
+import { listProducts, listCategories, listInventoryItems, listProductRecipes, listAllProductRecipes, upsertProduct, deleteProduct, upsertCategory, deleteCategory, upsertInventoryItem, deleteInventoryItem } from "@/lib/api/coffee.functions";
 import { getMyRole } from "@/lib/api/users.functions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -42,19 +42,27 @@ export const Route = createFileRoute("/_authenticated/products")({
 
 const peso = (n: number) => "₱" + Number(n).toLocaleString("en-PH", { minimumFractionDigits: 2 });
 const blank = { id: "", name: "", description: "", category_id: "", price: "", stock_quantity: "", low_stock_threshold: "10", image_url: "" };
+type RecipeDraft = { item_id: string; quantity_required: string };
 
 function Products() {
   const fn = useServerFn(listProducts);
   const catFn = useServerFn(listCategories);
+  const ingredientFn = useServerFn(listInventoryItems);
+  const recipeFn = useServerFn(listProductRecipes);
+  const allRecipesFn = useServerFn(listAllProductRecipes);
   const save = useServerFn(upsertProduct);
   const del = useServerFn(deleteProduct);
   const saveCat = useServerFn(upsertCategory);
   const delCat = useServerFn(deleteCategory);
+  const saveIngredient = useServerFn(upsertInventoryItem);
+  const delIngredient = useServerFn(deleteInventoryItem);
   const fetchRole = useServerFn(getMyRole);
   const qc = useQueryClient();
 
   const { data: products = [] } = useQuery({ queryKey: ["products"], queryFn: () => fn() });
   const { data: categories = [] } = useQuery({ queryKey: ["categories"], queryFn: () => catFn() });
+  const { data: ingredients = [] } = useQuery({ queryKey: ["inventoryItems"], queryFn: () => ingredientFn() });
+  const { data: allRecipes = [] } = useQuery({ queryKey: ["productRecipes"], queryFn: () => allRecipesFn() });
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: () => fetchRole() });
   const isAdmin = !!me?.isAdmin;
 
@@ -63,6 +71,8 @@ function Products() {
   const [form, setForm] = useState(blank);
   const [catOpen, setCatOpen] = useState(false);
   const [catName, setCatName] = useState("");
+  const [ingredientForm, setIngredientForm] = useState({ name: "", unit: "g", initial_stock: "", low_stock_threshold: "" });
+  const [recipes, setRecipes] = useState<RecipeDraft[]>([]);
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -75,6 +85,16 @@ function Products() {
     );
   }, [products, searchQuery]);
   const productsPagination = usePagination(filteredProducts);
+  const hasRecipeIngredients = recipes.some((recipe) => recipe.item_id);
+  const recipesByProduct = useMemo(() => {
+    const grouped = new Map<string, any[]>();
+    for (const recipe of allRecipes as any[]) {
+      const current = grouped.get(recipe.product_id) ?? [];
+      current.push(recipe);
+      grouped.set(recipe.product_id, current);
+    }
+    return grouped;
+  }, [allRecipes]);
 
   const handleUpload = async (file: File) => {
     if (!file.type.startsWith("image/")) { toast.error("Please choose an image file"); return; }
@@ -91,18 +111,19 @@ function Products() {
     finally { setUploading(false); }
   };
 
-  const edit = (p: any) => {
+  const edit = async (p: any) => {
     setForm({
       id: p.id, name: p.name, description: p.description ?? "",
       category_id: p.category_id ?? "", price: String(p.price),
       stock_quantity: String(p.stock_quantity), low_stock_threshold: String(p.low_stock_threshold),
       image_url: p.image_url ?? "",
     });
+    const existing = await recipeFn({ data: { product_id: p.id } });
+    setRecipes((existing as any[]).map((recipe) => ({ item_id: recipe.item_id, quantity_required: String(recipe.quantity_required) })));
     setOpen(true);
   };
 
   const submit = async (e: React.FormEvent) => {
-    console.log('checkkkkk')
     e.preventDefault();
     try {
       const payload = {
@@ -110,15 +131,36 @@ function Products() {
         name: form.name, description: form.description,
         category_id: form.category_id || null,
         price: Number(form.price),
-        stock_quantity: Number(form.stock_quantity),
+        stock_quantity: form.stock_quantity === "" ? 0 : Number(form.stock_quantity),
         low_stock_threshold: Number(form.low_stock_threshold),
         image_url: form.image_url || null,
+        recipes: recipes.filter((recipe) => recipe.item_id && Number(recipe.quantity_required) > 0).map((recipe) => ({
+          item_id: recipe.item_id,
+          quantity_required: Number(recipe.quantity_required),
+        })),
       };
 
       await save({ data: payload });
       toast.success("Product saved");
       qc.invalidateQueries({ queryKey: ["products"] });
+      qc.invalidateQueries({ queryKey: ["productRecipes"] });
       setOpen(false); setForm(blank);
+      setRecipes([]);
+    } catch (e: any) { toast.error(e.message); }
+  };
+
+  const addIngredient = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await saveIngredient({ data: {
+        name: ingredientForm.name,
+        unit: ingredientForm.unit as "g" | "ml" | "pcs" | "oz",
+        initial_stock: Number(ingredientForm.initial_stock),
+        low_stock_threshold: Number(ingredientForm.low_stock_threshold),
+      } });
+      toast.success("Ingredient added");
+      setIngredientForm({ name: "", unit: "g", initial_stock: "", low_stock_threshold: "" });
+      qc.invalidateQueries({ queryKey: ["inventoryItems"] });
     } catch (e: any) { toast.error(e.message); }
   };
 
@@ -149,6 +191,7 @@ function Products() {
         <TabsList>
           <TabsTrigger value="products">Products</TabsTrigger>
           <TabsTrigger value="categories">Categories</TabsTrigger>
+          <TabsTrigger value="ingredients">Ingredients</TabsTrigger>
         </TabsList>
         <TabsContent value="products" className="space-y-3">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -159,9 +202,9 @@ function Products() {
               onChange={(e) => setSearchQuery(e.target.value)}
             />
             {isAdmin && (
-              <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) setForm(blank); }}>
+              <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) { setForm(blank); setRecipes([]); } }}>
                 <DialogTrigger asChild><Button><Plus className="mr-1 h-4 w-4" /> New Product</Button></DialogTrigger>
-                <DialogContent>
+                <DialogContent className="overflow-y-auto">
                   <DialogHeader><DialogTitle>{form.id ? "Edit" : "New"} Product</DialogTitle></DialogHeader>
                   <form onSubmit={submit} className="space-y-3">
                     <div className="space-y-1.5"><Label>Name</Label><Input required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
@@ -175,8 +218,8 @@ function Products() {
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1.5"><Label>Price</Label><Input type="number" step="0.01" min="0" required value={form.price} onChange={e => setForm({ ...form, price: e.target.value })} /></div>
-                      <div className="space-y-1.5"><Label>Stock Qty</Label><Input type="number" min="0" required value={form.stock_quantity} onChange={e => setForm({ ...form, stock_quantity: e.target.value })} /></div>
-                      <div className="space-y-1.5"><Label>Low Stock Alert</Label><Input type="number" min="0" required value={form.low_stock_threshold} onChange={e => setForm({ ...form, low_stock_threshold: e.target.value })} /></div>
+                      <div className="space-y-1.5"><Label>Stock Qty{hasRecipeIngredients ? " (optional)" : ""}</Label><Input type="number" min="0" required={!hasRecipeIngredients} disabled={hasRecipeIngredients} value={form.stock_quantity} onChange={e => setForm({ ...form, stock_quantity: e.target.value })} /></div>
+                      <div className="space-y-1.5"><Label>Low Stock Alert{hasRecipeIngredients ? " (optional)" : ""}</Label><Input type="number" min="0" required={!hasRecipeIngredients} disabled={hasRecipeIngredients} value={form.low_stock_threshold} onChange={e => setForm({ ...form, low_stock_threshold: e.target.value })} /></div>
                     </div>
                     <div className="space-y-1.5">
                       <Label>Product Image</Label>
@@ -189,7 +232,28 @@ function Products() {
                         {form.image_url && <Button type="button" variant="ghost" size="sm" onClick={() => setForm({ ...form, image_url: "" })}>Remove</Button>}
                       </div>
                     </div>
-                    <Button type="submit" className="w-full">Save</Button>
+                    <div className="space-y-2 border-t pt-3">
+                      <Label>Recipe / Ingredients</Label>
+                      {recipes.map((recipe, index) => {
+                        const ingredient = (ingredients as any[]).find((item) => item.id === recipe.item_id);
+                        return <div key={`${recipe.item_id}-${index}`} className="flex items-center gap-2">
+                          <Select value={recipe.item_id} onValueChange={(value) => setRecipes((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, item_id: value } : row))}>
+                            <SelectTrigger className="flex-1"><SelectValue placeholder="Select ingredient" /></SelectTrigger>
+                            <SelectContent>{(ingredients as any[]).map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent>
+                          </Select>
+                          <Input className="w-24" type="number" min="0.001" step="any" required value={recipe.quantity_required} onChange={(e) => setRecipes((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, quantity_required: e.target.value } : row))} />
+                          <span className="w-8 text-xs text-muted-foreground">{ingredient?.unit ?? "-"}</span>
+                          <Button type="button" size="icon" variant="ghost" onClick={() => setRecipes((current) => current.filter((_, rowIndex) => rowIndex !== index))}><Trash2 className="h-4 w-4" /></Button>
+                        </div>;
+                      })}
+                      <Button type="button" variant="outline" onClick={() => setRecipes((current) => [...current, { item_id: "", quantity_required: "" }])}><Plus className="mr-1 h-4 w-4" /> Add ingredient</Button>
+                    </div>
+                    <div className="sticky bottom-0 z-10 -mx-5 mt-4 border-t bg-background px-5 pb-1 pt-3 sm:-mx-6 sm:px-6">
+                      <div className="flex justify-end gap-2">
+                        <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+                        <Button type="submit">Save</Button>
+                      </div>
+                    </div>
                   </form>
                 </DialogContent>
               </Dialog>
@@ -204,7 +268,7 @@ function Products() {
                     <TableHead>Name</TableHead><TableHead>Category</TableHead>
                     <TableHead className="text-right">Price</TableHead>
                     {/* <TableHead className="text-right">Cost</TableHead> */}
-                    <TableHead className="text-right">Stock</TableHead>
+                    <TableHead>Recipe / Ingredients</TableHead>
                     <TableHead className="text-right">Action</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -220,7 +284,11 @@ function Products() {
                       <TableCell>{p.categories?.name ?? "—"}</TableCell>
                       <TableCell className="text-right">{peso(p.price)}</TableCell>
                       {/* <TableCell className="text-right">{peso(p.cost)}</TableCell> */}
-                      <TableCell className="text-right">{p.stock_quantity}</TableCell>
+                      <TableCell>
+                        {(recipesByProduct.get(p.id) ?? []).length > 0
+                          ? recipesByProduct.get(p.id)!.map((recipe: any) => `${recipe.inventory_items?.name ?? "Unknown"} (${recipe.quantity_required} ${recipe.inventory_items?.unit ?? ""})`).join(", ")
+                          : "—"}
+                      </TableCell>
                       <TableCell className="text-right">
                         {isAdmin && (
                           <>
@@ -263,6 +331,21 @@ function Products() {
                   </li>
                 ))}
               </ul>
+            </CardContent>
+          </Card>
+        </TabsContent>
+        <TabsContent value="ingredients" className="space-y-3">
+          <Card>
+            <CardHeader><CardTitle className="font-display">Ingredients</CardTitle></CardHeader>
+            <CardContent className="space-y-3">
+              {isAdmin && <form onSubmit={addIngredient} className="grid gap-2 sm:grid-cols-5">
+                <Input required placeholder="Ingredient Name" value={ingredientForm.name} onChange={(e) => setIngredientForm({ ...ingredientForm, name: e.target.value })} />
+                <Select value={ingredientForm.unit} onValueChange={(unit) => setIngredientForm({ ...ingredientForm, unit })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{["g", "ml", "pcs", "oz"].map((unit) => <SelectItem key={unit} value={unit}>{unit}</SelectItem>)}</SelectContent></Select>
+                <Input required type="number" min="0" step="any" placeholder="Initial Stock" value={ingredientForm.initial_stock} onChange={(e) => setIngredientForm({ ...ingredientForm, initial_stock: e.target.value })} />
+                <Input required type="number" min="0" step="any" placeholder="Low Stock Threshold" value={ingredientForm.low_stock_threshold} onChange={(e) => setIngredientForm({ ...ingredientForm, low_stock_threshold: e.target.value })} />
+                <Button type="submit">Add</Button>
+              </form>}
+              <ul className="divide-y">{(ingredients as any[]).map((item) => <li key={item.id} className="flex items-center justify-between py-2"><span>{item.name} <span className="text-xs text-muted-foreground">({item.unit})</span></span>{isAdmin && <Button size="icon" variant="ghost" className="text-destructive" onClick={async () => { try { await delIngredient({ data: { id: item.id } }); qc.invalidateQueries({ queryKey: ["inventoryItems"] }); toast.success("Deleted"); } catch (e: any) { toast.error(e.message); } }}><Trash2 className="h-4 w-4" /></Button>}</li>)}</ul>
             </CardContent>
           </Card>
         </TabsContent>

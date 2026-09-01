@@ -14,6 +14,74 @@ export type Database = {
   }
   public: {
     Tables: {
+      inventory_items: {
+        Row: {
+          id: string
+          name: string
+          unit: string
+          initial_stock: number
+          total_used: number
+          current_stock: number
+          low_stock_threshold: number
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          name: string
+          unit: string
+          initial_stock?: number
+          total_used?: number
+          current_stock?: number
+          low_stock_threshold?: number
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          name?: string
+          unit?: string
+          initial_stock?: number
+          total_used?: number
+          current_stock?: number
+          low_stock_threshold?: number
+          created_at?: string
+        }
+        Relationships: []
+      }
+      inventory_movements: {
+        Row: {
+          id: string
+          item_id: string
+          type: string
+          qty: number
+          reference: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          item_id: string
+          type: string
+          qty: number
+          reference?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          item_id?: string
+          type?: string
+          qty?: number
+          reference?: string | null
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "inventory_movements_item_id_fkey"
+            columns: ["item_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_items"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       categories: {
         Row: {
           created_at: string
@@ -69,6 +137,27 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      product_recipes: {
+        Row: {
+          id: string
+          product_id: string
+          item_id: string
+          quantity_required: number
+        }
+        Insert: {
+          id?: string
+          product_id: string
+          item_id: string
+          quantity_required: number
+        }
+        Update: {
+          id?: string
+          product_id?: string
+          item_id?: string
+          quantity_required?: number
+        }
+        Relationships: []
       }
       products: {
         Row: {
@@ -245,6 +334,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      process_pos_checkout: {
+        Args: { p_receipt_id: string; p_items: Json }
+        Returns: Json
+      }
       admin_delete_user: {
         Args: { target_user_id: string }
         Returns: undefined

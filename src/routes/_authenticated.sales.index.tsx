@@ -56,14 +56,14 @@ function SalesPOS() {
     [products, search]);
 
   const addToCart = (p: any) => {
-    if (p.stock_quantity <= 0) return toast.error("Out of stock");
+    if (p.available_stock <= 0) return toast.error("Out of stock");
     setCart(prev => {
       const ex = prev.find(c => c.product_id === p.id);
       if (ex) {
-        if (ex.quantity >= p.stock_quantity) { toast.error("No more stock"); return prev; }
+        if (ex.quantity >= p.available_stock) { toast.error("No more stock"); return prev; }
         return prev.map(c => c.product_id === p.id ? { ...c, quantity: c.quantity + 1 } : c);
       }
-      return [...prev, { product_id: p.id, name: p.name, price: Number(p.price), quantity: 1, stock: p.stock_quantity }];
+      return [...prev, { product_id: p.id, name: p.name, price: Number(p.price), quantity: 1, stock: p.available_stock }];
     });
   };
 
@@ -109,14 +109,14 @@ function SalesPOS() {
           </div>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             {filtered.map((p: any) => (
-              <button key={p.id} onClick={() => addToCart(p)} disabled={p.stock_quantity === 0}
+              <button key={p.id} onClick={() => addToCart(p)} disabled={p.available_stock === 0}
                 className="group rounded-xl border bg-card p-4 text-left transition hover:border-primary hover:shadow-md disabled:opacity-40">
                 <ProductImage path={p.image_url} className="h-40 w-full rounded-md" />
                 <div className="mt-3 font-medium">{p.name}</div>
                 <div className="text-xs text-muted-foreground">{p.categories?.name}</div>
                 <div className="mt-2 flex items-center justify-between">
                   <span className="font-semibold text-primary">{peso(p.price)}</span>
-                  <Badge variant={p.stock_quantity <= p.low_stock_threshold ? "destructive" : "secondary"}>{p.stock_quantity}</Badge>
+                  <Badge variant={p.available_stock <= p.low_stock_threshold ? "destructive" : "secondary"}>{p.available_stock}</Badge>
                 </div>
               </button>
             ))}
@@ -159,7 +159,7 @@ function SalesPOS() {
           <DialogHeader><DialogTitle>Receipt</DialogTitle></DialogHeader>
           {receipt && (
             <>
-              <div className="print-area bg-white p-4 text-black">
+              <div className="bg-white p-4 text-black">
                 <div className="flex flex-col items-center text-center">
                   <img src={'/coffeLogo.jpg'} className="h-16 w-16 rounded-full" alt="logo" />
                   <div className="mt-2 font-display text-xl font-bold">COFFEE ZONE</div>
@@ -185,7 +185,7 @@ function SalesPOS() {
                 </div>
                 <div className="mt-3 text-center text-xs">Thank you! ☕</div>
               </div>
-              <div className="flex gap-2 no-print">
+              <div className="no-print mt-3 flex gap-2">
                 <Button variant="outline" className="flex-1" onClick={() => setReceipt(null)}><X className="mr-1 h-4 w-4" /> Close</Button>
                 <Button className="flex-1" onClick={() => window.print()}><Printer className="mr-1 h-4 w-4" /> Print</Button>
               </div>
@@ -193,6 +193,34 @@ function SalesPOS() {
           )}
         </DialogContent>
       </Dialog>
+
+      {receipt && (
+        <div id="printable-receipt-area" className="hidden print:block bg-white p-4 text-black">
+          <div className="flex flex-col items-center text-center">
+            <img src={'/coffeLogo.jpg'} className="h-16 w-16 rounded-full" alt="logo" />
+            <div className="mt-2 font-display text-xl font-bold">COFFEE ZONE</div>
+            <div className="text-xs">Start your day right</div>
+          </div>
+          <div className="my-3 border-y border-dashed py-2 text-center text-xs">
+            <div>{receipt.sale.receipt_number}</div>
+            <div>{new Date(receipt.ts).toLocaleString()}</div>
+          </div>
+          <table className="w-full text-xs">
+            <tbody>
+              {receipt.items.map((i: CartItem) => (
+                <tr key={i.product_id}>
+                  <td>{i.quantity}× {i.name}</td>
+                  <td className="text-right">{peso(i.price * i.quantity)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="mt-3 space-y-0.5 border-t border-dashed pt-2 text-xs">
+            <div className="flex justify-between font-bold"><span>TOTAL</span><span>{peso(receipt.subtotal)}</span></div>
+          </div>
+          <div className="mt-3 text-center text-xs">Thank you! ☕</div>
+        </div>
+      )}
     </div>
   );
 }
