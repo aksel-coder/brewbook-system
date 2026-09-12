@@ -1,6 +1,9 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { getLowStockInventory, normalizeCategoryType, resolveCategoryInventoryType } from "@/lib/api/low-stock";
+
+export { normalizeCategoryType, resolveCategoryInventoryType };
 
 const isCompletedSale = (sale: any) => {
   const status = sale?.status ?? sale?.sale_status ?? sale?.state;
@@ -37,24 +40,6 @@ const enrichProductsWithSales = (products: any[], salesRows: any[]) => {
   }));
 };
 
-export const normalizeCategoryType = (categoryType?: string | null) => {
-  if (categoryType == null) return "Finished Good";
-
-  const cleaned = String(categoryType)
-    .replace(/'/g, "")
-    .replace(/::text/gi, "")
-    .trim();
-
-  if (cleaned === "Finished Good" || cleaned === "recipe_based") return cleaned;
-  return "Finished Good";
-};
-
-const resolveCategoryInventoryType = (categoryType?: string | null, recipes: any[] = []) => {
-  const normalized = normalizeCategoryType(categoryType);
-  if (normalized === "recipe_based" || normalized === "Finished Good") return normalized;
-  return recipes.length > 0 ? "recipe_based" : "Finished Good";
-};
-
 // ============ DASHBOARD ============
 export const getDashboardStats = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
@@ -79,15 +64,17 @@ export const getDashboardStats = createServerFn({ method: "GET" })
       }
       return { data: all, error: null };
     })();
-    const [salesInRange, salesToday, products, recent, completedSales] = await Promise.all([
+    const [salesInRange, salesToday, products, recent, completedSales, inventoryItems, recipesResult] = await Promise.all([
       salesInRangePromise,
       supabase.from("sales").select("id, total_amount").gte("sale_date", today.toISOString()),
-      supabase.from("products").select("id, name, stock_quantity, low_stock_threshold").eq("is_active", true),
+      supabase.from("products").select("id, name, stock_quantity, low_stock_threshold, categories(id, name, category_type)").eq("is_active", true),
       supabase.from("sales").select("id, receipt_number, total_amount, sale_date").gte("sale_date", data.startDate).lte("sale_date", data.endDate).order("sale_date", { ascending: false }).limit(5),
       supabase.from("sales").select("id, sale_items(quantity, product_id)").order("sale_date", { ascending: false }),
+      supabase.from("inventory_items").select("id, name, current_stock, low_stock_threshold").order("name"),
+      supabase.from("product_recipes").select("product_id, item_id, quantity_required").order("product_id"),
     ]);
 
-    for (const result of [salesInRange, salesToday, products, recent, completedSales]) {
+    for (const result of [salesInRange, salesToday, products, recent, completedSales, inventoryItems, recipesResult]) {
       if (result.error) throw new Error(result.error.message);
     }
 
@@ -96,8 +83,18 @@ export const getDashboardStats = createServerFn({ method: "GET" })
     const orderCount = salesInRange.data?.length ?? 0;
     const productsWithSales = enrichProductsWithSales(products.data ?? [], completedSales.data ?? []);
     const totalProducts = productsWithSales.length;
-    const totalStock = productsWithSales.reduce((s, p) => s + (p.stock_quantity ?? 0), 0);
-    const lowStockItems = productsWithSales.filter((p: any) => (p.stock_quantity ?? 0) <= (p.low_stock_threshold ?? 0));
+    const totalStock = productsWithSales.reduce((s, p) => s + Math.max(0, Number(p.stock_quantity ?? 0)), 0);
+    const recipesByProduct = new Map<string, any[]>();
+    for (const recipe of recipesResult.data ?? []) {
+      const current = recipesByProduct.get(recipe.product_id) ?? [];
+      current.push(recipe);
+      recipesByProduct.set(recipe.product_id, current);
+    }
+    const lowStockItems = getLowStockInventory({
+      products: productsWithSales,
+      inventoryItems: inventoryItems.data ?? [],
+      recipesByProduct,
+    });
 
     // best sellers aggregation
     const bsMap = new Map<string, { name: string; qty: number; price: number }>();

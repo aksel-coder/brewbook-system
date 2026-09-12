@@ -1,7 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { listSales, listProducts } from "@/lib/api/coffee.functions";
+import { listSales, listProducts, listInventoryItems, listAllProductRecipes } from "@/lib/api/coffee.functions";
+import { getLowStockInventory } from "@/lib/api/low-stock";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -89,8 +90,12 @@ function PaginatedTable<T>({
 function Reports() {
   const salesFn = useServerFn(listSales);
   const prodFn = useServerFn(listProducts);
+  const inventoryFn = useServerFn(listInventoryItems);
+  const recipesFn = useServerFn(listAllProductRecipes);
   const { data: sales = [] } = useQuery({ queryKey: ["sales"], queryFn: () => salesFn() });
   const { data: products = [] } = useQuery({ queryKey: ["products"], queryFn: () => prodFn() });
+  const { data: inventoryItems = [] } = useQuery({ queryKey: ["inventoryItems"], queryFn: () => inventoryFn() });
+  const { data: recipes = [] } = useQuery({ queryKey: ["allProductRecipes"], queryFn: () => recipesFn() });
 
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -135,7 +140,20 @@ function Reports() {
     return Array.from(map.values()).sort((a, b) => b.qty - a.qty);
   }, [filteredSales]);
 
-  const lowStock = (products as any[]).filter(p => p.stock_quantity <= p.low_stock_threshold);
+  const lowStock = useMemo(() => {
+    const recipesByProduct = new Map<string, any[]>();
+    for (const recipe of recipes as any[]) {
+      const current = recipesByProduct.get(recipe.product_id) ?? [];
+      current.push(recipe);
+      recipesByProduct.set(recipe.product_id, current);
+    }
+
+    return getLowStockInventory({
+      products: products as any[],
+      inventoryItems: inventoryItems as any[],
+      recipesByProduct,
+    });
+  }, [products, inventoryItems, recipes]);
 
   const exportSales = (label: string, data: any[]) => {
     const rows = data.map(s => [s.receipt_number, new Date(s.sale_date).toLocaleString(), Number(s.total_amount).toFixed(2)]);
@@ -249,21 +267,22 @@ function Reports() {
             <CardHeader className="flex-row items-center justify-between">
               <CardTitle className="font-display">Low Stock Report</CardTitle>
               <div className="flex flex-wrap gap-2">
-                <Button variant="outline" size="sm" onClick={() => printTable("Low Stock", ["Product", "Stock", "Threshold"], lowStock.map(p => [p.name, p.stock_quantity, p.low_stock_threshold]))}><Printer className="mr-1 h-4 w-4" /> Print</Button>
-                <Button variant="outline" size="sm" onClick={() => downloadCSV("low_stock.csv", [["Product", "Stock", "Threshold"], ...lowStock.map(p => [p.name, p.stock_quantity, p.low_stock_threshold])])}><Download className="mr-1 h-4 w-4" /> CSV</Button>
+                <Button variant="outline" size="sm" onClick={() => printTable("Low Stock", ["Product", "Stock", "Threshold", "Type"], lowStock.map(p => [p.name, Math.max(0, Number(p.stock_quantity ?? 0)), Number(p.low_stock_threshold ?? 0), p.kind === "ingredient" ? "Raw Ingredient" : "Finished Good"]))}><Printer className="mr-1 h-4 w-4" /> Print</Button>
+                <Button variant="outline" size="sm" onClick={() => downloadCSV("low_stock.csv", [["Product", "Stock", "Threshold", "Type"], ...lowStock.map(p => [p.name, Math.max(0, Number(p.stock_quantity ?? 0)), Number(p.low_stock_threshold ?? 0), p.kind === "ingredient" ? "Raw Ingredient" : "Finished Good"])])}><Download className="mr-1 h-4 w-4" /> CSV</Button>
               </div>
             </CardHeader>
             <CardContent>
               {lowStock.length === 0 ? <p className="text-muted-foreground text-sm">All items healthy.</p> :
                 <PaginatedTable
                   items={lowStock}
-                  headers={<TableRow><TableHead>Product</TableHead><TableHead className="text-right">Stock</TableHead><TableHead className="text-right">Threshold</TableHead></TableRow>}
-                  getKey={p => p.id}
+                  headers={<TableRow><TableHead>Product</TableHead><TableHead className="text-right">Stock</TableHead><TableHead className="text-right">Threshold</TableHead><TableHead>Type</TableHead></TableRow>}
+                  getKey={p => `${p.kind ?? "item"}-${p.id}`}
                   renderRow={p => (
                     <>
                       <TableCell>{p.name}</TableCell>
-                      <TableCell className="text-right">{p.stock_quantity}</TableCell>
-                      <TableCell className="text-right">{p.low_stock_threshold}</TableCell>
+                      <TableCell className="text-right">{Math.max(0, Number(p.stock_quantity ?? 0))}</TableCell>
+                      <TableCell className="text-right">{Number(p.low_stock_threshold ?? 0)}</TableCell>
+                      <TableCell>{p.kind === "ingredient" ? "Raw Ingredient" : "Finished Good"}</TableCell>
                     </>
                   )}
                 />}

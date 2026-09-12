@@ -152,18 +152,20 @@ function Inventory() {
                 <TableHead className="text-right">Used</TableHead>
                 <TableHead className="text-right">Remaining Stock</TableHead>
                 <TableHead>Unit</TableHead>
+                <TableHead className="text-right">Low Stock</TableHead>
                 <TableHead>Status</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {stockPagination.paginatedItems.map((item: any) => {
                 const isIngredient = item.kind === "ingredient";
-                const remainingStock = isIngredient ? item.current_stock : Number(item.stock_quantity ?? 0);
+                const remainingStock = Math.max(0, isIngredient ? Number(item.current_stock ?? 0) : Number(item.stock_quantity ?? 0));
                 const initialStock = isIngredient
-                  ? item.initial_stock
-                  : Number(remainingStock + Number(item.sold_quantity ?? 0));
-                const usedStock = isIngredient ? item.total_used : Number(item.sold_quantity ?? 0);
-                const low = Number(remainingStock) <= Number(item.low_stock_threshold ?? 0);
+                  ? Math.max(0, Number(item.initial_stock ?? 0))
+                  : Math.max(0, Number(remainingStock + Number(item.sold_quantity ?? 0)));
+                const usedStock = isIngredient ? Math.max(0, Number(item.total_used ?? 0)) : Math.max(0, Number(item.sold_quantity ?? 0));
+                const threshold = Math.max(0, Number(item.low_stock_threshold ?? 0));
+                const low = Number(remainingStock) <= threshold;
                 return (
                   <TableRow key={item.id}>
                     <TableCell className="font-medium">{item.name}</TableCell>
@@ -172,6 +174,7 @@ function Inventory() {
                     <TableCell className="text-right">{usedStock}</TableCell>
                     <TableCell className="text-right">{remainingStock}</TableCell>
                     <TableCell>{isIngredient ? item.unit : "pcs"}</TableCell>
+                    <TableCell className="text-right">{threshold}</TableCell>
                     <TableCell>
                       <Badge variant={low ? "destructive" : "secondary"}>
                         {low ? "Low Stock" : "Healthy"}

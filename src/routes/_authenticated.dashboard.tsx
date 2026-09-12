@@ -212,7 +212,7 @@ function Dashboard() {
                   <li key={p?.id ?? Math.random()} className="flex items-center justify-between gap-3 py-2">
                     <span className="truncate">{p?.name ?? "Unknown item"}</span>
                     <Badge variant="destructive" className="shrink-0">
-                      {Number(p?.stock_quantity ?? 0) === 0 ? "SOLD OUT" : `${Number(p?.stock_quantity ?? 0)} left`}
+                      {Number(p?.stock_quantity ?? 0) === 0 ? "OUT OF STOCK" : `${Math.max(0, Number(p?.stock_quantity ?? 0))} left`}
                     </Badge>
                   </li>
                 ))}
