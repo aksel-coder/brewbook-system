@@ -23,9 +23,10 @@ function History() {
   const fn = useServerFn(listSales);
   const { data = [], isLoading } = useQuery({ queryKey: ["sales"], queryFn: () => fn() });
   const [q, setQ] = useState("");
+  const safeSales = Array.isArray(data) ? data.filter(Boolean) : [];
   const filtered = useMemo(
-    () => (data as any[]).filter(s => s.receipt_number.toLowerCase().includes(q.toLowerCase())),
-    [data, q],
+    () => safeSales.filter(s => typeof s?.receipt_number === "string" && s.receipt_number.toLowerCase().includes(q.toLowerCase())),
+    [safeSales, q],
   );
   const { paginatedItems, ...pagination } = usePagination(filtered);
 

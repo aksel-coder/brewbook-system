@@ -84,16 +84,19 @@ export type Database = {
       }
       categories: {
         Row: {
+          category_type: "Finished Good" | "recipe_based"
           created_at: string
           id: string
           name: string
         }
         Insert: {
+          category_type: "Finished Good" | "recipe_based"
           created_at?: string
           id?: string
           name: string
         }
         Update: {
+          category_type?: "Finished Good" | "recipe_based"
           created_at?: string
           id?: string
           name?: string

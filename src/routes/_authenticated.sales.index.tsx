@@ -38,6 +38,16 @@ const peso = (n: number) => "₱" + Number(n).toLocaleString("en-PH", { minimumF
 
 type CartItem = { product_id: string; name: string; price: number; quantity: number; stock: number };
 
+const clearPersistedPosState = () => {
+  if (typeof window === "undefined") return;
+  try {
+    const keys = ["coffee-zone-cart", "coffee-zone-selected-products", "pos-cart", "selectedProducts"];
+    for (const key of keys) window.localStorage.removeItem(key);
+  } catch {
+    // ignore storage access failures during startup
+  }
+};
+
 function SalesPOS() {
   const fn = useServerFn(listProducts);
   const createFn = useServerFn(createSale);
@@ -51,9 +61,14 @@ function SalesPOS() {
   const [receipt, setReceipt] = useState<any>(null);
   const [busy, setBusy] = useState(false);
 
+  useEffect(() => {
+    clearPersistedPosState();
+  }, []);
+
+  const safeProducts = Array.isArray(products) ? products.filter(Boolean) : [];
   const filtered = useMemo(() =>
-    (products as any[]).filter(p => p.is_active && p.name.toLowerCase().includes(search.toLowerCase())),
-    [products, search]);
+    safeProducts.filter((p: any) => p?.is_active && typeof p?.name === "string" && p.name.toLowerCase().includes(search.toLowerCase())),
+    [safeProducts, search]);
 
   const addToCart = (p: any) => {
     if (p.available_stock <= 0) return toast.error("Out of stock");

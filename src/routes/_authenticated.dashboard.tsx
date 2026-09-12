@@ -71,9 +71,20 @@ function Dashboard() {
     },
   });
 
+  const dashboardData = data ?? {
+    totalSales: 0,
+    totalProducts: 0,
+    totalStock: 0,
+    lowStockCount: 0,
+    salesChart: [],
+    best: [],
+    recent: [],
+    lowStockItems: [],
+  };
+
   if (isLoading) return <div className="grid gap-4 md:grid-cols-4">{[...Array(4)].map((_, i) => <Skeleton key={i} className="h-28" />)}</div>;
 
-  if (isError || !data) {
+  if (isError || !dashboardData) {
     return (
       <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground space-y-3">
         <p>Could not load dashboard data. Check your connection and try again.</p>
@@ -97,10 +108,10 @@ function Dashboard() {
   };
 
   const kpis = [
-    { label: "Total Sales", value: peso(data.totalSales), icon: Coins, hint: formatDateRange(range.startDate, range.endDate) },
-    { label: "Total Products", value: data.totalProducts, icon: Package, hint: `${data.totalStock} units in stock` },
-    { label: "Inventory On Hand", value: data.totalStock, icon: Boxes, hint: "units across all products" },
-    { label: "Low Stock Alerts", value: data.lowStockCount, icon: AlertTriangle, hint: "items at/below threshold" },
+    { label: "Total Sales", value: peso(Number(dashboardData.totalSales ?? 0)), icon: Coins, hint: formatDateRange(range.startDate, range.endDate) },
+    { label: "Total Products", value: Number(dashboardData.totalProducts ?? 0), icon: Package, hint: `${Number(dashboardData.totalStock ?? 0)} units in stock` },
+    { label: "Inventory On Hand", value: Number(dashboardData.totalStock ?? 0), icon: Boxes, hint: "units across all products" },
+    { label: "Low Stock Alerts", value: Number(dashboardData.lowStockCount ?? 0), icon: AlertTriangle, hint: "items at/below threshold" },
   ];
 
   return (
@@ -147,7 +158,7 @@ function Dashboard() {
           <CardHeader><CardTitle className="font-display flex items-center gap-2"><TrendingUp className="h-5 w-5" /> Sales ({formatDateRange(range.startDate, range.endDate)})</CardTitle></CardHeader>
           <CardContent className="h-64">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={data.salesChart}>
+              <LineChart data={Array.isArray(dashboardData.salesChart) ? dashboardData.salesChart : []}>
                 <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" />
                 <XAxis dataKey="date" stroke="var(--muted-foreground)" fontSize={12} />
                 <YAxis stroke="var(--muted-foreground)" fontSize={12} />
@@ -162,7 +173,7 @@ function Dashboard() {
           <CardHeader><CardTitle className="font-display">Best Sellers</CardTitle></CardHeader>
           <CardContent className="h-64">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={data.best} layout="vertical" margin={{ left: 20 }}>
+              <BarChart data={Array.isArray(dashboardData.best) ? dashboardData.best : []} layout="vertical" margin={{ left: 20 }}>
                 <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" />
                 <XAxis type="number" stroke="var(--muted-foreground)" fontSize={12} />
                 <YAxis type="category" dataKey="name" stroke="var(--muted-foreground)" fontSize={11} width={90} />
@@ -178,15 +189,15 @@ function Dashboard() {
         <Card>
           <CardHeader><CardTitle className="font-display">Recent Transactions</CardTitle></CardHeader>
           <CardContent>
-            {data.recent.length === 0 ? <p className="text-sm text-muted-foreground">No transactions yet.</p> :
+            {Array.isArray(dashboardData.recent) && dashboardData.recent.length === 0 ? <p className="text-sm text-muted-foreground">No transactions yet.</p> :
               <ul className="divide-y">
-                {data.recent.map((s: any) => (
-                  <li key={s.id} className="flex items-center justify-between py-2">
+                {(Array.isArray(dashboardData.recent) ? dashboardData.recent : []).map((s: any) => (
+                  <li key={s?.id ?? Math.random()} className="flex items-center justify-between py-2">
                     <div>
-                      <div className="font-medium">{s.receipt_number}</div>
-                      <div className="text-xs text-muted-foreground">{new Date(s.sale_date).toLocaleString()}</div>
+                      <div className="font-medium">{s?.receipt_number ?? "—"}</div>
+                      <div className="text-xs text-muted-foreground">{s?.sale_date ? new Date(s.sale_date).toLocaleString() : "No date"}</div>
                     </div>
-                    <div className="font-semibold text-primary">{peso(s.total_amount)}</div>
+                    <div className="font-semibold text-primary">{peso(Number(s?.total_amount ?? 0))}</div>
                   </li>
                 ))}
               </ul>}
@@ -195,13 +206,13 @@ function Dashboard() {
         <Card>
           <CardHeader><CardTitle className="font-display flex items-center gap-2"><AlertTriangle className="h-5 w-5 text-warning" /> Low Stock</CardTitle></CardHeader>
           <CardContent>
-            {data.lowStockItems.length === 0 ? <p className="text-sm text-muted-foreground">All items healthy.</p> :
+            {Array.isArray(dashboardData.lowStockItems) && dashboardData.lowStockItems.length === 0 ? <p className="text-sm text-muted-foreground">All items healthy.</p> :
               <ul className="divide-y">
-                {data.lowStockItems.map((p: any) => (
-                  <li key={p.id} className="flex items-center justify-between gap-3 py-2">
-                    <span className="truncate">{p.name}</span>
+                {(Array.isArray(dashboardData.lowStockItems) ? dashboardData.lowStockItems : []).map((p: any) => (
+                  <li key={p?.id ?? Math.random()} className="flex items-center justify-between gap-3 py-2">
+                    <span className="truncate">{p?.name ?? "Unknown item"}</span>
                     <Badge variant="destructive" className="shrink-0">
-                      {p.stock_quantity === 0 ? "SOLD OUT" : `${p.stock_quantity} left`}
+                      {Number(p?.stock_quantity ?? 0) === 0 ? "SOLD OUT" : `${Number(p?.stock_quantity ?? 0)} left`}
                     </Badge>
                   </li>
                 ))}

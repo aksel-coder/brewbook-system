@@ -66,11 +66,17 @@ function Products() {
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: () => fetchRole() });
   const isAdmin = !!me?.isAdmin;
 
+  const safeProducts = Array.isArray(products) ? products.filter(Boolean) : [];
+  const safeCategories = Array.isArray(categories) ? categories.filter(Boolean) : [];
+  const safeIngredients = Array.isArray(ingredients) ? ingredients.filter(Boolean) : [];
+  const safeAllRecipes = Array.isArray(allRecipes) ? allRecipes.filter(Boolean) : [];
+
   const [open, setOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [form, setForm] = useState(blank);
   const [catOpen, setCatOpen] = useState(false);
   const [catName, setCatName] = useState("");
+  const [catType, setCatType] = useState<"Finished Good" | "recipe_based">("Finished Good");
   const [ingredientForm, setIngredientForm] = useState({ name: "", unit: "g", initial_stock: "", low_stock_threshold: "" });
   const [recipes, setRecipes] = useState<RecipeDraft[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -78,23 +84,25 @@ function Products() {
 
   const filteredProducts = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
-    if (!query) return products as any[];
-    return (products as any[]).filter((product) =>
-      product.name.toLowerCase().includes(query) ||
-      product.categories?.name?.toLowerCase().includes(query),
-    );
-  }, [products, searchQuery]);
+    const list = safeProducts;
+    if (!query) return list as any[];
+    return (list as any[]).filter((product) => {
+      const name = typeof product?.name === "string" ? product.name : "";
+      const categoryName = typeof product?.categories?.name === "string" ? product.categories.name : "";
+      return name.toLowerCase().includes(query) || categoryName.toLowerCase().includes(query);
+    });
+  }, [safeProducts, searchQuery]);
   const productsPagination = usePagination(filteredProducts);
   const hasRecipeIngredients = recipes.some((recipe) => recipe.item_id);
   const recipesByProduct = useMemo(() => {
     const grouped = new Map<string, any[]>();
-    for (const recipe of allRecipes as any[]) {
-      const current = grouped.get(recipe.product_id) ?? [];
+    for (const recipe of safeAllRecipes) {
+      const current = grouped.get(recipe?.product_id) ?? [];
       current.push(recipe);
-      grouped.set(recipe.product_id, current);
+      grouped.set(recipe?.product_id, current);
     }
     return grouped;
-  }, [allRecipes]);
+  }, [safeAllRecipes]);
 
   const handleUpload = async (file: File) => {
     if (!file.type.startsWith("image/")) { toast.error("Please choose an image file"); return; }
@@ -119,7 +127,10 @@ function Products() {
       image_url: p.image_url ?? "",
     });
     const existing = await recipeFn({ data: { product_id: p.id } });
-    setRecipes((existing as any[]).map((recipe) => ({ item_id: recipe.item_id, quantity_required: String(recipe.quantity_required) })));
+    setRecipes((Array.isArray(existing) ? existing : []).map((recipe) => ({
+      item_id: recipe?.item_id ?? "",
+      quantity_required: String(recipe?.quantity_required ?? ""),
+    })));
     setOpen(true);
   };
 
@@ -176,13 +187,17 @@ function Products() {
   const addCat = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await saveCat({ data: { name: catName } });
+      await saveCat({ data: { name: catName.trim(), category_type: catType } });
       toast.success("Category added");
       setCatName("");
+      setCatType("Finished Good");
       qc.invalidateQueries({ queryKey: ["categories"] });
     }
     catch (e: any) { toast.error(e.message); }
   };
+
+  const selectedCategoryType = safeCategories.find((category) => category.id === form.category_id)?.category_type ?? "Finished Good";
+  const isRecipeCategory = selectedCategoryType === "recipe_based";
 
   return (
     <div className="space-y-4">
@@ -213,13 +228,13 @@ function Products() {
                       <Label>Category</Label>
                       <Select value={form.category_id} onValueChange={v => setForm({ ...form, category_id: v })}>
                         <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
-                        <SelectContent>{(categories as any[]).map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent>
+                        <SelectContent>{(Array.isArray(categories) ? categories : []).map(c => <SelectItem key={c.id} value={c.id}>{c.name} ({c.category_type ?? "Finished Good"})</SelectItem>)}</SelectContent>
                       </Select>
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1.5"><Label>Price</Label><Input type="number" step="0.01" min="0" required value={form.price} onChange={e => setForm({ ...form, price: e.target.value })} /></div>
-                      <div className="space-y-1.5"><Label>Stock Qty{hasRecipeIngredients ? " (optional)" : ""}</Label><Input type="number" min="0" required={!hasRecipeIngredients} disabled={hasRecipeIngredients} value={form.stock_quantity} onChange={e => setForm({ ...form, stock_quantity: e.target.value })} /></div>
-                      <div className="space-y-1.5"><Label>Low Stock Alert{hasRecipeIngredients ? " (optional)" : ""}</Label><Input type="number" min="0" required={!hasRecipeIngredients} disabled={hasRecipeIngredients} value={form.low_stock_threshold} onChange={e => setForm({ ...form, low_stock_threshold: e.target.value })} /></div>
+                      <div className="space-y-1.5"><Label>Stock Qty{isRecipeCategory || hasRecipeIngredients ? " (optional)" : ""}</Label><Input type="number" min="0" required={!isRecipeCategory && !hasRecipeIngredients} disabled={isRecipeCategory || hasRecipeIngredients} value={form.stock_quantity} onChange={e => setForm({ ...form, stock_quantity: e.target.value })} /></div>
+                      <div className="space-y-1.5"><Label>Low Stock Alert{isRecipeCategory || hasRecipeIngredients ? " (optional)" : ""}</Label><Input type="number" min="0" required={!isRecipeCategory && !hasRecipeIngredients} disabled={isRecipeCategory || hasRecipeIngredients} value={form.low_stock_threshold} onChange={e => setForm({ ...form, low_stock_threshold: e.target.value })} /></div>
                     </div>
                     <div className="space-y-1.5">
                       <Label>Product Image</Label>
@@ -239,7 +254,7 @@ function Products() {
                         return <div key={`${recipe.item_id}-${index}`} className="flex items-center gap-2">
                           <Select value={recipe.item_id} onValueChange={(value) => setRecipes((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, item_id: value } : row))}>
                             <SelectTrigger className="flex-1"><SelectValue placeholder="Select ingredient" /></SelectTrigger>
-                            <SelectContent>{(ingredients as any[]).map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent>
+                            <SelectContent>{(Array.isArray(ingredients) ? ingredients : []).map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent>
                           </Select>
                           <Input className="w-24" type="number" min="0.001" step="any" required value={recipe.quantity_required} onChange={(e) => setRecipes((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, quantity_required: e.target.value } : row))} />
                           <span className="w-8 text-xs text-muted-foreground">{ingredient?.unit ?? "-"}</span>
@@ -316,15 +331,25 @@ function Products() {
             <CardHeader><CardTitle className="font-display">Categories</CardTitle></CardHeader>
             <CardContent className="space-y-3">
               {isAdmin && (
-                <form onSubmit={addCat} className="flex gap-2">
-                  <Input placeholder="New category name" value={catName} onChange={e => setCatName(e.target.value)} />
+                <form onSubmit={addCat} className="flex flex-col gap-2 sm:flex-row">
+                  <Input placeholder="New category name" value={catName} onChange={e => setCatName(e.target.value)} className="sm:flex-1" />
+                  <Select value={catType} onValueChange={(value) => setCatType(value as "Finished Good" | "recipe_based")}>
+                    <SelectTrigger className="sm:w-52"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Finished Good">Finished Good</SelectItem>
+                      <SelectItem value="recipe_based">recipe_based</SelectItem>
+                    </SelectContent>
+                  </Select>
                   <Button type="submit">Add</Button>
                 </form>
               )}
               <ul className="divide-y">
                 {(categories as any[]).map(c => (
                   <li key={c.id} className="flex items-center justify-between py-2">
-                    <span>{c.name}</span>
+                    <div>
+                      <div>{c.name}</div>
+                      <div className="text-xs text-muted-foreground">{c.category_type ?? "Finished Good"}</div>
+                    </div>
                     {isAdmin && (
                       <Button size="icon" variant="ghost" className="text-destructive" onClick={async () => { try { await delCat({ data: { id: c.id } }); toast.success("Deleted"); qc.invalidateQueries({ queryKey: ["categories"] }); } catch (e: any) { toast.error(e.message); } }}><Trash2 className="h-4 w-4" /></Button>
                     )}

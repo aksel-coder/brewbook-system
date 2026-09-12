@@ -90,6 +90,18 @@ function AuthInvalidator() {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      ["coffee-zone-cart", "coffee-zone-selected-products", "pos-cart", "selectedProducts"].forEach((key) => {
+        window.localStorage.removeItem(key);
+      });
+    } catch {
+      // ignore storage access failures during startup
+    }
+  }, []);
+
   return (
     <QueryClientProvider client={queryClient}>
       <AuthInvalidator />
