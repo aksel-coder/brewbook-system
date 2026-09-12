@@ -20,6 +20,7 @@ export type Database = {
           name: string
           unit: string
           initial_stock: number
+          added_stock: number
           total_used: number
           current_stock: number
           low_stock_threshold: number
@@ -30,6 +31,7 @@ export type Database = {
           name: string
           unit: string
           initial_stock?: number
+          added_stock?: number
           total_used?: number
           current_stock?: number
           low_stock_threshold?: number
@@ -40,6 +42,7 @@ export type Database = {
           name?: string
           unit?: string
           initial_stock?: number
+          added_stock?: number
           total_used?: number
           current_stock?: number
           low_stock_threshold?: number

@@ -148,9 +148,10 @@ function Inventory() {
               <TableRow>
                 <TableHead>Item Name</TableHead>
                 <TableHead>Category</TableHead>
-                <TableHead className="text-right">Initial Stock / Stock Qty</TableHead>
+                <TableHead className="text-right">Initial</TableHead>
+                <TableHead className="text-right">Added</TableHead>
                 <TableHead className="text-right">Used</TableHead>
-                <TableHead className="text-right">Remaining Stock</TableHead>
+                <TableHead className="text-right">Remaining</TableHead>
                 <TableHead>Unit</TableHead>
                 <TableHead className="text-right">Low Stock</TableHead>
                 <TableHead>Status</TableHead>
@@ -163,6 +164,7 @@ function Inventory() {
                 const initialStock = isIngredient
                   ? Math.max(0, Number(item.initial_stock ?? 0))
                   : Math.max(0, Number(remainingStock + Number(item.sold_quantity ?? 0)));
+                const addedStock = isIngredient ? Math.max(0, Number(item.added_stock ?? 0)) : 0;
                 const usedStock = isIngredient ? Math.max(0, Number(item.total_used ?? 0)) : Math.max(0, Number(item.sold_quantity ?? 0));
                 const threshold = Math.max(0, Number(item.low_stock_threshold ?? 0));
                 const low = Number(remainingStock) <= threshold;
@@ -171,6 +173,7 @@ function Inventory() {
                     <TableCell className="font-medium">{item.name}</TableCell>
                     <TableCell>{item.category}</TableCell>
                     <TableCell className="text-right">{initialStock}</TableCell>
+                    <TableCell className="text-right">{addedStock}</TableCell>
                     <TableCell className="text-right">{usedStock}</TableCell>
                     <TableCell className="text-right">{remainingStock}</TableCell>
                     <TableCell>{isIngredient ? item.unit : "pcs"}</TableCell>

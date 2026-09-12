@@ -181,7 +181,10 @@ export const listCategories = createServerFn({ method: "GET" })
 export const listInventoryItems = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const { data, error } = await context.supabase.from("inventory_items").select("*").order("name");
+    const { data, error } = await context.supabase
+      .from("inventory_items")
+      .select("id, name, unit, initial_stock, added_stock, total_used, current_stock, low_stock_threshold, created_at")
+      .order("name");
     if (error) throw new Error(error.message);
     return data ?? [];
   });
@@ -199,7 +202,7 @@ export const upsertInventoryItem = createServerFn({ method: "POST" })
     await requireAdminRole(context.supabase, context.userId, "ingredient management");
     const payload = data.id
       ? { name: data.name, unit: data.unit, low_stock_threshold: data.low_stock_threshold }
-      : { ...data, current_stock: data.initial_stock };
+      : { ...data, current_stock: data.initial_stock, added_stock: 0 };
     const result = data.id
       ? await context.supabase.from("inventory_items").update(payload).eq("id", data.id)
       : await context.supabase.from("inventory_items").insert(payload);
@@ -537,13 +540,41 @@ export const adjustIngredient = createServerFn({ method: "POST" })
     await requireInventoryWriteAccess(context.supabase, context.userId);
     const amount = data.type === "In" ? data.quantity : -data.quantity;
     const { data: item, error: readError } = await context.supabase.from("inventory_items")
-      .select("current_stock").eq("id", data.item_id).single();
+      .select("initial_stock, added_stock, total_used, current_stock").eq("id", data.item_id).single();
     if (readError) throw new Error(readError.message);
-    const currentStock = Number(item.current_stock ?? 0);
-    if (currentStock + amount < 0) throw new Error("Resulting stock cannot be negative");
+
+    const currentInitial = Number(item?.initial_stock ?? 0);
+    const currentAdded = Number(item?.added_stock ?? 0);
+    const currentUsed = Number(item?.total_used ?? 0);
+    const currentStock = Number(item?.current_stock ?? 0);
+
+    let nextInitial = currentInitial;
+    let nextAdded = currentAdded;
+    let nextUsed = currentUsed;
+    let nextCurrent = currentStock;
+
+    if (data.type === "In") {
+      nextInitial = currentInitial + data.quantity;
+      nextAdded = currentAdded + data.quantity;
+      nextCurrent = currentStock + data.quantity;
+      nextUsed = currentUsed;
+    } else {
+      nextInitial = currentInitial;
+      nextAdded = currentAdded;
+      nextUsed = currentUsed + data.quantity;
+      nextCurrent = currentStock - data.quantity;
+      if (nextCurrent < 0) throw new Error("Resulting stock cannot be negative");
+    }
+
     const { error: updateError } = await context.supabase.from("inventory_items")
-      .update({ current_stock: currentStock + amount }).eq("id", data.item_id);
+      .update({
+        initial_stock: nextInitial,
+        added_stock: nextAdded,
+        total_used: nextUsed,
+        current_stock: nextCurrent,
+      }).eq("id", data.item_id);
     if (updateError) throw new Error(updateError.message);
+
     const { error: movementError } = await context.supabase.from("inventory_movements").insert({
       item_id: data.item_id, type: data.type, qty: amount, reference: data.reference ?? "manual",
     });
