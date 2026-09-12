@@ -158,14 +158,18 @@ function Inventory() {
             <TableBody>
               {stockPagination.paginatedItems.map((item: any) => {
                 const isIngredient = item.kind === "ingredient";
-                const remainingStock = isIngredient ? item.current_stock : item.stock_quantity;
+                const remainingStock = isIngredient ? item.current_stock : Number(item.stock_quantity ?? 0);
+                const initialStock = isIngredient
+                  ? item.initial_stock
+                  : Number(remainingStock + Number(item.sold_quantity ?? 0));
+                const usedStock = isIngredient ? item.total_used : Number(item.sold_quantity ?? 0);
                 const low = Number(remainingStock) <= Number(item.low_stock_threshold ?? 0);
                 return (
                   <TableRow key={item.id}>
                     <TableCell className="font-medium">{item.name}</TableCell>
                     <TableCell>{item.category}</TableCell>
-                    <TableCell className="text-right">{isIngredient ? item.initial_stock : "—"}</TableCell>
-                    <TableCell className="text-right">{isIngredient ? item.total_used : "—"}</TableCell>
+                    <TableCell className="text-right">{initialStock}</TableCell>
+                    <TableCell className="text-right">{usedStock}</TableCell>
                     <TableCell className="text-right">{remainingStock}</TableCell>
                     <TableCell>{isIngredient ? item.unit : "pcs"}</TableCell>
                     <TableCell>

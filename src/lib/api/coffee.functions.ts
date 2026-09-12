@@ -476,7 +476,10 @@ export const createSale = createServerFn({ method: "POST" })
       const nextProductStock = Number(current.stock_quantity ?? 0) - item.quantity;
       const { error: productUpdateError } = await supabase
         .from("products")
-        .update({ stock_quantity: nextProductStock, updated_at: new Date().toISOString() })
+        .update({
+          stock_quantity: Math.max(nextProductStock, 0),
+          updated_at: new Date().toISOString(),
+        })
         .eq("id", item.product_id);
 
       if (productUpdateError) {
