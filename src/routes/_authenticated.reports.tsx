@@ -24,6 +24,19 @@ export const Route = createFileRoute("/_authenticated/reports")({
 
 const peso = (n: number) => "₱" + Number(n).toLocaleString("en-PH", { minimumFractionDigits: 2 });
 
+function getInventorySnapshotStock(product: any) {
+  const rawStock = product?.inventory_type === "recipe_based"
+    ? Number(product?.available_stock ?? 0)
+    : Number(product?.stock_quantity ?? 0);
+  return Number.isFinite(rawStock) ? Math.max(0, rawStock) : 0;
+}
+
+function getInventorySnapshotValue(product: any) {
+  const stock = getInventorySnapshotStock(product);
+  const rawValue = stock * Number(product?.price ?? 0);
+  return Number.isFinite(rawValue) ? Math.max(0, rawValue) : 0;
+}
+
 function downloadCSV(filename: string, rows: (string | number)[][]) {
   const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
   const blob = new Blob([csv], { type: "text/csv" });
@@ -294,8 +307,8 @@ function Reports() {
             <CardHeader className="flex-row items-center justify-between">
               <CardTitle className="font-display">Inventory Snapshot</CardTitle>
               <div className="flex flex-wrap gap-2">
-                <Button variant="outline" size="sm" onClick={() => printTable("Inventory", ["Product", "Stock", "Price", "Value"], (products as any[]).map(p => [p.name, p.stock_quantity, peso(p.price), peso(p.stock_quantity * Number(p.price))]))}><Printer className="mr-1 h-4 w-4" /> Print</Button>
-                <Button variant="outline" size="sm" onClick={() => downloadPDF("Inventory", ["Product", "Stock", "Price", "Value"], (products as any[]).map(p => [p.name, p.stock_quantity, peso(p.price), peso(p.stock_quantity * Number(p.price))]))}><FileText className="mr-1 h-4 w-4" /> PDF</Button>
+                <Button variant="outline" size="sm" onClick={() => printTable("Inventory", ["Product", "Stock", "Price", "Value"], (products as any[]).map(p => [p.name, getInventorySnapshotStock(p), peso(p.price), peso(getInventorySnapshotValue(p))]))}><Printer className="mr-1 h-4 w-4" /> Print</Button>
+                <Button variant="outline" size="sm" onClick={() => downloadPDF("Inventory", ["Product", "Stock", "Price", "Value"], (products as any[]).map(p => [p.name, getInventorySnapshotStock(p), peso(p.price), peso(getInventorySnapshotValue(p))]))}><FileText className="mr-1 h-4 w-4" /> PDF</Button>
               </div>
             </CardHeader>
             <CardContent>
@@ -306,9 +319,9 @@ function Reports() {
                 renderRow={p => (
                   <>
                     <TableCell>{p.name}</TableCell>
-                    <TableCell className="text-right">{p.stock_quantity}</TableCell>
+                    <TableCell className="text-right">{getInventorySnapshotStock(p)}</TableCell>
                     <TableCell className="text-right">{peso(p.price)}</TableCell>
-                    <TableCell className="text-right">{peso(p.stock_quantity * Number(p.price))}</TableCell>
+                    <TableCell className="text-right">{peso(getInventorySnapshotValue(p))}</TableCell>
                   </>
                 )}
               />
