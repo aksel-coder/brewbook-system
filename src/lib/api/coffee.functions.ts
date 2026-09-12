@@ -37,8 +37,21 @@ const enrichProductsWithSales = (products: any[], salesRows: any[]) => {
   }));
 };
 
-export const resolveCategoryInventoryType = (categoryType?: string | null, recipes: any[] = []) => {
-  if (categoryType === "Finished Good" || categoryType === "recipe_based") return categoryType;
+export const normalizeCategoryType = (categoryType?: string | null) => {
+  if (categoryType == null) return "Finished Good";
+
+  const cleaned = String(categoryType)
+    .replace(/'/g, "")
+    .replace(/::text/gi, "")
+    .trim();
+
+  if (cleaned === "Finished Good" || cleaned === "recipe_based") return cleaned;
+  return "Finished Good";
+};
+
+const resolveCategoryInventoryType = (categoryType?: string | null, recipes: any[] = []) => {
+  const normalized = normalizeCategoryType(categoryType);
+  if (normalized === "recipe_based" || normalized === "Finished Good") return normalized;
   return recipes.length > 0 ? "recipe_based" : "Finished Good";
 };
 
@@ -357,7 +370,7 @@ export const createSale = createServerFn({ method: "POST" })
     for (const item of data.items) {
       const current = productMap.get(item.product_id);
       if (!current) throw new Error("Product not found");
-      const inventoryType = resolveCategoryInventoryType(current.categories?.category_type, recipeMap.get(item.product_id) ?? []);
+      const inventoryType = resolveCategoryInventoryType(normalizeCategoryType(current.categories?.category_type), recipeMap.get(item.product_id) ?? []);
       const hasRecipeFlow = inventoryType === "recipe_based";
       if (hasRecipeFlow) {
         const recipes = recipeMap.get(item.product_id) ?? [];
@@ -407,7 +420,7 @@ export const createSale = createServerFn({ method: "POST" })
         throw new Error("Product not found");
       }
 
-      const inventoryType = resolveCategoryInventoryType(current.categories?.category_type, recipeMap.get(item.product_id) ?? []);
+      const inventoryType = resolveCategoryInventoryType(normalizeCategoryType(current.categories?.category_type), recipeMap.get(item.product_id) ?? []);
       const recipes = recipeMap.get(item.product_id) ?? [];
       if (inventoryType === "recipe_based") {
         if (recipes.length === 0) {

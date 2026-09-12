@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { listProducts, listInventoryItems, adjustIngredient, adjustInventory, listInventoryMovements } from "@/lib/api/coffee.functions";
+import { listProducts, listInventoryItems, adjustIngredient, adjustInventory, listInventoryMovements, normalizeCategoryType } from "@/lib/api/coffee.functions";
 import { getMyRole } from "@/lib/api/users.functions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -40,13 +40,15 @@ function Inventory() {
       kind: "ingredient",
       category: "Raw Ingredient",
     })),
-    ...(products as any[]).map((product) => ({
-      ...product,
-      id: `product-${product.id}`,
-      kind: "product",
-      category: product.categories?.name ?? "—",
-      display_id: product.id,
-    })),
+    ...(products as any[])
+      .filter((product: any) => normalizeCategoryType(product?.categories?.category_type) !== "recipe_based")
+      .map((product) => ({
+        ...product,
+        id: `product-${product.id}`,
+        kind: "product",
+        category: product.categories?.name ?? "—",
+        display_id: product.id,
+      })),
   ], [items, products]);
   const stockPagination = usePagination(stockRows);
   const txnPagination = usePagination(txns as any[]);
