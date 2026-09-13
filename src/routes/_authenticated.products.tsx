@@ -1,11 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { listProducts, listCategories, listInventoryItems, listProductRecipes, listAllProductRecipes, listProductVariants, upsertProduct, deleteProduct, upsertCategory, deleteCategory, upsertInventoryItem, deleteInventoryItem } from "@/lib/api/coffee.functions";
+import { listProducts, listCategories, listInventoryItems, listProductRecipes, listProductVariants, upsertProduct, deleteProduct, upsertCategory, deleteCategory, upsertInventoryItem, deleteInventoryItem } from "@/lib/api/coffee.functions";
 import { getMyRole } from "@/lib/api/users.functions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -41,9 +42,96 @@ export const Route = createFileRoute("/_authenticated/products")({
 });
 
 const peso = (n: number) => "₱" + Number(n).toLocaleString("en-PH", { minimumFractionDigits: 2 });
+const formatPriceRange = (variants: any[]) => {
+  const prices = variants.map((variant) => Number(variant?.price)).filter((price) => Number.isFinite(price) && price >= 0);
+  if (prices.length === 0) return "—";
+  const minimum = Math.min(...prices);
+  const maximum = Math.max(...prices);
+  return minimum === maximum ? peso(minimum) : `${peso(minimum)} – ${peso(maximum)}`;
+};
 const blank = { id: "", name: "", description: "", category_id: "", price: "", stock_quantity: "", low_stock_threshold: "10", image_url: "" };
 type RecipeDraft = { item_id: string; quantity_required: string };
 type VariantDraft = { id?: string; name: string; price: string; recipes: RecipeDraft[] };
+
+function ProductTable({
+  title,
+  products,
+  emptyMessage,
+  isAdmin,
+  onEdit,
+  onDelete,
+  variantTable = false,
+  recipeIngredients = [],
+}: {
+  title: string;
+  products: any[];
+  emptyMessage: string;
+  isAdmin: boolean;
+  onEdit: (product: any) => void;
+  onDelete: (id: string) => void;
+  variantTable?: boolean;
+  recipeIngredients?: any[];
+}) {
+  const hasVariants = variantTable;
+
+  return <Card>
+    <CardHeader><CardTitle className="font-display">{title}</CardTitle></CardHeader>
+    <CardContent className="overflow-x-auto p-0">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Image</TableHead>
+            <TableHead>{hasVariants ? "Drink Name" : "Product Name"}</TableHead>
+            <TableHead>Category</TableHead>
+            <TableHead className="text-right">{hasVariants ? "Price Range" : "Price"}</TableHead>
+            {hasVariants && <TableHead>Variants &amp; Recipes</TableHead>}
+            <TableHead className="text-right">Actions</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {products.length === 0 ? <TableRow><TableCell colSpan={hasVariants ? 6 : 5} className="h-24 text-center text-muted-foreground">{emptyMessage}</TableCell></TableRow> : products.map((product) => {
+            const variants = Array.isArray(product.product_variants) ? product.product_variants : [];
+            return <TableRow key={product.id}>
+              <TableCell><ProductImage path={product.image_url} className="h-10 w-10 rounded-md border" /></TableCell>
+              <TableCell className="font-medium">{product.name}</TableCell>
+              <TableCell>{product.categories?.name ?? "—"}</TableCell>
+              <TableCell className="text-right align-top font-medium">{hasVariants ? formatPriceRange(variants) : peso(product.price)}</TableCell>
+              {hasVariants && <TableCell className="min-w-70 align-top">
+                <div className="space-y-2">
+                  {variants.map((variant: any) => <div key={variant.id} className="rounded-md border bg-muted/20 px-2.5 py-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant="secondary" className="font-medium">{variant.name}</Badge>
+                      <span className="text-sm font-semibold text-primary">{peso(Number(variant.price))}</span>
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-x-1.5 gap-y-0.5">
+                      {(Array.isArray(variant.recipes) ? variant.recipes : []).length > 0 ? variant.recipes.map((recipe: any, index: number) => {
+                        const ingredient = recipeIngredients.find((item) => item.id === (recipe.item_id ?? recipe.ingredient_id));
+                        const quantity = recipe.quantity_required ?? recipe.quantity;
+                        return <span key={`${variant.id}-${recipe.item_id ?? recipe.ingredient_id ?? index}`} className="text-xs text-muted-foreground">{ingredient?.name ?? "Unknown ingredient"} ({quantity} {ingredient?.unit ?? ""}){index < variant.recipes.length - 1 ? " ·" : ""}</span>;
+                      }) : <span className="text-xs text-muted-foreground">No ingredients</span>}
+                    </div>
+                  </div>)}
+                </div>
+              </TableCell>}
+              <TableCell className="text-right align-top">
+                {isAdmin && <div className="flex justify-end gap-1">
+                  <Button size="icon" variant="ghost" onClick={() => onEdit(product)}><Pencil className="h-4 w-4" /></Button>
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild><Button size="icon" variant="ghost" className="text-destructive"><Trash2 className="h-4 w-4" /></Button></AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader><AlertDialogTitle>Delete {product.name}?</AlertDialogTitle><AlertDialogDescription>This cannot be undone.</AlertDialogDescription></AlertDialogHeader>
+                      <AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={() => onDelete(product.id)}>Delete</AlertDialogAction></AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                </div>}
+              </TableCell>
+            </TableRow>;
+          })}
+        </TableBody>
+      </Table>
+    </CardContent>
+  </Card>;
+}
 
 function Products() {
   const fn = useServerFn(listProducts);
@@ -51,7 +139,6 @@ function Products() {
   const ingredientFn = useServerFn(listInventoryItems);
   const recipeFn = useServerFn(listProductRecipes);
   const variantFn = useServerFn(listProductVariants);
-  const allRecipesFn = useServerFn(listAllProductRecipes);
   const save = useServerFn(upsertProduct);
   const del = useServerFn(deleteProduct);
   const saveCat = useServerFn(upsertCategory);
@@ -64,14 +151,12 @@ function Products() {
   const { data: products = [] } = useQuery({ queryKey: ["products"], queryFn: () => fn() });
   const { data: categories = [] } = useQuery({ queryKey: ["categories"], queryFn: () => catFn() });
   const { data: ingredients = [] } = useQuery({ queryKey: ["inventoryItems"], queryFn: () => ingredientFn() });
-  const { data: allRecipes = [] } = useQuery({ queryKey: ["productRecipes"], queryFn: () => allRecipesFn() });
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: () => fetchRole() });
   const isAdmin = !!me?.isAdmin;
 
   const safeProducts = Array.isArray(products) ? products.filter(Boolean) : [];
   const safeCategories = Array.isArray(categories) ? categories.filter(Boolean) : [];
   const safeIngredients = Array.isArray(ingredients) ? ingredients.filter(Boolean) : [];
-  const safeAllRecipes = Array.isArray(allRecipes) ? allRecipes.filter(Boolean) : [];
 
   const [open, setOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -95,18 +180,16 @@ function Products() {
       return name.toLowerCase().includes(query) || categoryName.toLowerCase().includes(query);
     });
   }, [safeProducts, searchQuery]);
-  const productsPagination = usePagination(filteredProducts);
-  const hasRecipeIngredients = recipes.some((recipe) => recipe.item_id);
-  const recipesByProduct = useMemo(() => {
-    const grouped = new Map<string, any[]>();
-    for (const recipe of safeAllRecipes) {
-      const current = grouped.get(recipe?.product_id) ?? [];
-      current.push(recipe);
-      grouped.set(recipe?.product_id, current);
-    }
-    return grouped;
-  }, [safeAllRecipes]);
-
+  const finishedProducts = useMemo(() => filteredProducts.filter((product: any) => {
+    const variants = Array.isArray(product.product_variants) ? product.product_variants : [];
+    return product.categories?.category_type !== "recipe_based" && variants.length === 0;
+  }), [filteredProducts]);
+  const recipeProducts = useMemo(() => filteredProducts.filter((product: any) => {
+    const variants = Array.isArray(product.product_variants) ? product.product_variants : [];
+    return product.categories?.category_type === "recipe_based" || variants.length > 0;
+  }), [filteredProducts]);
+  const finishedPagination = usePagination(finishedProducts);
+  const recipePagination = usePagination(recipeProducts);
   const handleUpload = async (file: File) => {
     if (!file.type.startsWith("image/")) { toast.error("Please choose an image file"); return; }
     if (file.size > 5 * 1024 * 1024) { toast.error("Max image size is 5MB"); return; }
@@ -253,11 +336,7 @@ function Products() {
                         <SelectContent>{(Array.isArray(categories) ? categories : []).map(c => <SelectItem key={c.id} value={c.id}>{c.name} ({c.category_type ?? "Finished Good"})</SelectItem>)}</SelectContent>
                       </Select>
                     </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      {!isRecipeCategory && <div className="space-y-1.5"><Label>Price</Label><Input type="number" step="0.01" min="0" required value={form.price} onChange={e => setForm({ ...form, price: e.target.value })} /></div>}
-                      <div className="space-y-1.5"><Label>Stock Qty{isRecipeCategory || hasRecipeIngredients ? " (optional)" : ""}</Label><Input type="number" min="0" required={!isRecipeCategory && !hasRecipeIngredients} disabled={isRecipeCategory || hasRecipeIngredients} value={form.stock_quantity} onChange={e => setForm({ ...form, stock_quantity: e.target.value })} /></div>
-                      <div className="space-y-1.5"><Label>Low Stock Alert{isRecipeCategory || hasRecipeIngredients ? " (optional)" : ""}</Label><Input type="number" min="0" required={!isRecipeCategory && !hasRecipeIngredients} disabled={isRecipeCategory || hasRecipeIngredients} value={form.low_stock_threshold} onChange={e => setForm({ ...form, low_stock_threshold: e.target.value })} /></div>
-                    </div>
+                    {!isRecipeCategory && <div className="space-y-1.5"><Label>Price</Label><Input type="number" step="0.01" min="0" required value={form.price} onChange={e => setForm({ ...form, price: e.target.value })} /></div>}
                     <div className="space-y-1.5">
                       <Label>Product Image</Label>
                       <div className="flex items-center gap-3">
@@ -318,57 +397,10 @@ function Products() {
               </Dialog>
             )}
           </div>
-          <Card>
-            <CardContent className="p-0">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Image</TableHead>
-                    <TableHead>Name</TableHead><TableHead>Category</TableHead>
-                    <TableHead className="text-right">Price</TableHead>
-                    {/* <TableHead className="text-right">Cost</TableHead> */}
-                    <TableHead>Recipe / Ingredients</TableHead>
-                    <TableHead className="text-right">Action</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {productsPagination.paginatedItems.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={6} className="h-24 text-center">No products found.</TableCell>
-                    </TableRow>
-                  ) : productsPagination.paginatedItems.map(p => (
-                    <TableRow key={p.id}>
-                      <TableCell><ProductImage path={p.image_url} className="h-10 w-10 rounded-md border" /></TableCell>
-                      <TableCell className="font-medium">{p.name}</TableCell>
-                      <TableCell>{p.categories?.name ?? "—"}</TableCell>
-                      <TableCell className="text-right">{peso(p.price)}</TableCell>
-                      {/* <TableCell className="text-right">{peso(p.cost)}</TableCell> */}
-                      <TableCell>
-                        {(recipesByProduct.get(p.id) ?? []).length > 0
-                          ? recipesByProduct.get(p.id)!.map((recipe: any) => `${recipe.inventory_items?.name ?? "Unknown"} (${recipe.quantity_required} ${recipe.inventory_items?.unit ?? ""})`).join(", ")
-                          : "—"}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {isAdmin && (
-                          <>
-                            <Button size="icon" variant="ghost" onClick={() => edit(p)}><Pencil className="h-4 w-4" /></Button>
-                            <AlertDialog>
-                              <AlertDialogTrigger asChild><Button size="icon" variant="ghost" className="text-destructive"><Trash2 className="h-4 w-4" /></Button></AlertDialogTrigger>
-                              <AlertDialogContent>
-                                <AlertDialogHeader><AlertDialogTitle>Delete {p.name}?</AlertDialogTitle><AlertDialogDescription>This cannot be undone.</AlertDialogDescription></AlertDialogHeader>
-                                <AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={() => remove(p.id)}>Delete</AlertDialogAction></AlertDialogFooter>
-                              </AlertDialogContent>
-                            </AlertDialog>
-                          </>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-              <DataTablePagination {...productsPagination} onPageChange={productsPagination.setPage} />
-            </CardContent>
-          </Card>
+          <ProductTable title="Finished Goods (Direct Sale)" products={finishedPagination.paginatedItems} emptyMessage="No finished products found." isAdmin={isAdmin} onEdit={edit} onDelete={remove} />
+          <ProductTable title="Recipe-Based Drinks" products={recipePagination.paginatedItems} emptyMessage="No recipe-based products found." isAdmin={isAdmin} onEdit={edit} onDelete={remove} variantTable recipeIngredients={safeIngredients} />
+          <DataTablePagination {...finishedPagination} onPageChange={finishedPagination.setPage} />
+          <DataTablePagination {...recipePagination} onPageChange={recipePagination.setPage} />
         </TabsContent>
         <TabsContent value="categories" className="space-y-3">
           <Card>
