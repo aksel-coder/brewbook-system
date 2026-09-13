@@ -144,7 +144,7 @@ export const listProducts = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const [productsResult, salesResult, recipesResult] = await Promise.all([
-      context.supabase.from("products").select("*, categories(id, name, category_type)").order("name"),
+      context.supabase.from("products").select("*, categories(id, name, category_type), product_variants(id, name, price, recipes)").order("name"),
       context.supabase.from("sales").select("id, sale_items(quantity, product_id)").order("sale_date", { ascending: false }),
       context.supabase.from("product_recipes").select("product_id, quantity_required, inventory_items(current_stock)"),
     ]);
@@ -240,6 +240,19 @@ export const listAllProductRecipes = createServerFn({ method: "GET" })
     return data ?? [];
   });
 
+export const listProductVariants = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => z.object({ product_id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { data: variants, error } = await context.supabase
+      .from("product_variants")
+      .select("id, product_id, name, price, recipes")
+      .eq("product_id", data.product_id)
+      .order("created_at");
+    if (error) throw new Error(error.message);
+    return variants ?? [];
+  });
+
 const productSchema = z.object({
   id: z.string().uuid().optional(),
   name: z.string().min(1).max(120),
@@ -253,6 +266,12 @@ const productSchema = z.object({
   low_stock_threshold: z.number().int().min(0).default(10),
   image_url: z.string().max(2000).optional().nullable(),
   recipes: z.array(z.object({ item_id: z.string().uuid(), quantity_required: z.number().positive() })).default([]),
+  variants: z.array(z.object({
+    id: z.string().uuid().optional(),
+    name: z.string().min(1).max(80),
+    price: z.number().min(0),
+    recipes: z.array(z.object({ item_id: z.string().uuid(), quantity_required: z.number().positive() })).default([]),
+  })).default([]),
 });
 
 export const upsertProduct = createServerFn({ method: "POST" })
@@ -262,8 +281,16 @@ export const upsertProduct = createServerFn({ method: "POST" })
     const { supabase, userId } = context;
     await requireAdminRole(supabase, userId, "product management");
 
-    const { recipes, ...productData } = data;
+    const { recipes, variants, ...productData } = data;
     let productId = data.id;
+
+    const { data: category, error: categoryError } = data.category_id
+      ? await supabase.from("categories").select("category_type").eq("id", data.category_id).single()
+      : { data: null, error: null };
+    if (categoryError) throw new Error(categoryError.message);
+    if (variants.length > 0 && category?.category_type !== "recipe_based") {
+      throw new Error("Size variants are available only for recipe-based products");
+    }
 
     if (data.id) {
       const { error } = await supabase.from("products").update({ ...productData, updated_at: new Date().toISOString() }).eq("id", data.id);
@@ -282,6 +309,26 @@ export const upsertProduct = createServerFn({ method: "POST" })
         recipes.map((recipe) => ({ ...recipe, product_id: productId }))
       );
       if (recipeError) throw new Error(recipeError.message);
+    }
+
+    if (category?.category_type === "recipe_based") {
+      const { data: existingVariants, error: existingVariantsError } = await supabase
+        .from("product_variants").select("id").eq("product_id", productId);
+      if (existingVariantsError) throw new Error(existingVariantsError.message);
+      const submittedVariantIds = variants.flatMap((variant) => variant.id ? [variant.id] : []);
+      const variantsToDelete = (existingVariants ?? [])
+        .map((variant: any) => variant.id)
+        .filter((id: string) => !submittedVariantIds.includes(id));
+      if (variantsToDelete.length > 0) {
+        const { error } = await supabase.from("product_variants").delete().in("id", variantsToDelete);
+        if (error) throw new Error(error.message);
+      }
+      for (const variant of variants) {
+        const variantResult = variant.id
+          ? await supabase.from("product_variants").update({ name: variant.name, price: variant.price, recipes: variant.recipes }).eq("id", variant.id).eq("product_id", productId).select("id").single()
+          : await supabase.from("product_variants").insert({ product_id: productId, name: variant.name, price: variant.price, recipes: variant.recipes }).select("id").single();
+        if (variantResult.error) throw new Error(variantResult.error.message);
+      }
     }
     return { ok: true };
   });
@@ -330,6 +377,7 @@ export const deleteCategory = createServerFn({ method: "POST" })
 const saleSchema = z.object({
   items: z.array(z.object({
     product_id: z.string().uuid(),
+    variant_id: z.string().uuid().optional(),
     quantity: z.number().int().min(1),
     unit_price: z.number().min(0),
   })).min(1).max(100),
@@ -359,6 +407,12 @@ export const createSale = createServerFn({ method: "POST" })
       .in("product_id", productIds);
     if (recipesError) throw new Error(recipesError.message);
 
+    const variantIds = [...new Set(data.items.flatMap((item) => item.variant_id ? [item.variant_id] : []))];
+    const { data: variantsData, error: variantsError } = variantIds.length > 0
+      ? await supabase.from("product_variants").select("id, product_id, name, recipes").in("id", variantIds)
+      : { data: [], error: null };
+    if (variantsError) throw new Error(variantsError.message);
+
     const recipeMap = new Map<string, any[]>();
     for (const recipe of recipesData ?? []) {
       const current = recipeMap.get(recipe.product_id) ?? [];
@@ -366,23 +420,33 @@ export const createSale = createServerFn({ method: "POST" })
       recipeMap.set(recipe.product_id, current);
     }
 
+    const variantMap = new Map((variantsData ?? []).map((variant: any) => [variant.id, variant]));
+    const recipesForItem = (item: { product_id: string; variant_id?: string }) => {
+      if (!item.variant_id) return recipeMap.get(item.product_id) ?? [];
+      const variant = variantMap.get(item.variant_id);
+      if (!variant || variant.product_id !== item.product_id) throw new Error("Selected product variant was not found");
+      return Array.isArray(variant.recipes) ? variant.recipes : [];
+    };
+
     const productMap = new Map((productsData ?? []).map((product) => [product.id, product]));
     for (const item of data.items) {
       const current = productMap.get(item.product_id);
       if (!current) throw new Error("Product not found");
-      const inventoryType = resolveCategoryInventoryType(normalizeCategoryType(current.categories?.category_type), recipeMap.get(item.product_id) ?? []);
+      const itemRecipes = recipesForItem(item);
+      const inventoryType = resolveCategoryInventoryType(normalizeCategoryType(current.categories?.category_type), itemRecipes);
       const hasRecipeFlow = inventoryType === "recipe_based";
       if (hasRecipeFlow) {
-        const recipes = recipeMap.get(item.product_id) ?? [];
+        const recipes = itemRecipes;
         if (recipes.length === 0) {
           throw new Error(`${current.name} is set to recipe-based inventory but has no recipe ingredients`);
         }
         for (const recipe of recipes) {
-          const required = Number(recipe.quantity_required ?? 0) * item.quantity;
+          const required = Number(recipe.quantity_required ?? recipe.quantity ?? 0) * item.quantity;
+          const recipeItemId = recipe.item_id ?? recipe.ingredient_id;
           const { data: inventoryRow, error: inventoryReadError } = await supabase
             .from("inventory_items")
-            .select("id, name, current_stock, total_used")
-            .eq("id", recipe.item_id)
+            .select("id, name, unit, current_stock, total_used")
+            .eq("id", recipeItemId)
             .single();
 
           if (inventoryReadError) throw new Error(inventoryReadError.message);
@@ -420,8 +484,8 @@ export const createSale = createServerFn({ method: "POST" })
         throw new Error("Product not found");
       }
 
-      const inventoryType = resolveCategoryInventoryType(normalizeCategoryType(current.categories?.category_type), recipeMap.get(item.product_id) ?? []);
-      const recipes = recipeMap.get(item.product_id) ?? [];
+      const recipes = recipesForItem(item);
+      const inventoryType = resolveCategoryInventoryType(normalizeCategoryType(current.categories?.category_type), recipes);
       if (inventoryType === "recipe_based") {
         if (recipes.length === 0) {
           await supabase.from("sale_items").delete().eq("sale_id", sale.id);
@@ -430,11 +494,12 @@ export const createSale = createServerFn({ method: "POST" })
         }
 
         for (const recipe of recipes) {
-          const required = Number(recipe.quantity_required ?? 0) * item.quantity;
+          const required = Number(recipe.quantity_required ?? recipe.quantity ?? 0) * item.quantity;
+          const recipeItemId = recipe.item_id ?? recipe.ingredient_id;
           const { data: inventoryRow, error: inventoryReadError } = await supabase
             .from("inventory_items")
-            .select("id, name, current_stock, total_used")
-            .eq("id", recipe.item_id)
+            .select("id, name, unit, current_stock, total_used")
+            .eq("id", recipeItemId)
             .single();
 
           if (inventoryReadError) {
@@ -449,7 +514,7 @@ export const createSale = createServerFn({ method: "POST" })
           const { error: itemUpdateError } = await supabase
             .from("inventory_items")
             .update({ current_stock: nextStock, total_used: nextUsed })
-            .eq("id", recipe.item_id);
+            .eq("id", recipeItemId);
 
           if (itemUpdateError) {
             await supabase.from("sale_items").delete().eq("sale_id", sale.id);
@@ -458,10 +523,10 @@ export const createSale = createServerFn({ method: "POST" })
           }
 
           const { error: movementError } = await supabase.from("inventory_movements").insert({
-            item_id: recipe.item_id,
+            item_id: recipeItemId,
             type: "Sale",
             qty: -required,
-            reference: receipt,
+            reference: `${current.name}${item.variant_id ? ` (${variantMap.get(item.variant_id)?.name ?? "variant"})` : ""} x${item.quantity} used ${required}${inventoryRow?.unit ?? ""} ${inventoryRow?.name ?? "ingredient"} [${receipt}]`,
           });
 
           if (movementError) {

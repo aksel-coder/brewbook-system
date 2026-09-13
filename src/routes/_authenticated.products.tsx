@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { listProducts, listCategories, listInventoryItems, listProductRecipes, listAllProductRecipes, upsertProduct, deleteProduct, upsertCategory, deleteCategory, upsertInventoryItem, deleteInventoryItem } from "@/lib/api/coffee.functions";
+import { listProducts, listCategories, listInventoryItems, listProductRecipes, listAllProductRecipes, listProductVariants, upsertProduct, deleteProduct, upsertCategory, deleteCategory, upsertInventoryItem, deleteInventoryItem } from "@/lib/api/coffee.functions";
 import { getMyRole } from "@/lib/api/users.functions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -43,12 +43,14 @@ export const Route = createFileRoute("/_authenticated/products")({
 const peso = (n: number) => "₱" + Number(n).toLocaleString("en-PH", { minimumFractionDigits: 2 });
 const blank = { id: "", name: "", description: "", category_id: "", price: "", stock_quantity: "", low_stock_threshold: "10", image_url: "" };
 type RecipeDraft = { item_id: string; quantity_required: string };
+type VariantDraft = { id?: string; name: string; price: string; recipes: RecipeDraft[] };
 
 function Products() {
   const fn = useServerFn(listProducts);
   const catFn = useServerFn(listCategories);
   const ingredientFn = useServerFn(listInventoryItems);
   const recipeFn = useServerFn(listProductRecipes);
+  const variantFn = useServerFn(listProductVariants);
   const allRecipesFn = useServerFn(listAllProductRecipes);
   const save = useServerFn(upsertProduct);
   const del = useServerFn(deleteProduct);
@@ -79,6 +81,7 @@ function Products() {
   const [catType, setCatType] = useState<"Finished Good" | "recipe_based">("Finished Good");
   const [ingredientForm, setIngredientForm] = useState({ name: "", unit: "g", initial_stock: "", low_stock_threshold: "" });
   const [recipes, setRecipes] = useState<RecipeDraft[]>([]);
+  const [variants, setVariants] = useState<VariantDraft[]>([]);
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -131,6 +134,16 @@ function Products() {
       item_id: recipe?.item_id ?? "",
       quantity_required: String(recipe?.quantity_required ?? ""),
     })));
+    const existingVariants = await variantFn({ data: { product_id: p.id } });
+    setVariants((Array.isArray(existingVariants) ? existingVariants : []).map((variant: any) => ({
+      id: variant.id,
+      name: variant.name,
+      price: String(variant.price),
+      recipes: (variant.recipes ?? []).map((recipe: any) => ({
+        item_id: recipe.item_id ?? "",
+        quantity_required: String(recipe.quantity_required ?? ""),
+      })),
+    })));
     setOpen(true);
   };
 
@@ -141,7 +154,7 @@ function Products() {
         ...(form.id ? { id: form.id } : {}),
         name: form.name, description: form.description,
         category_id: form.category_id || null,
-        price: Number(form.price),
+        price: isRecipeCategory ? 0 : Number(form.price),
         stock_quantity: form.stock_quantity === "" ? 0 : Number(form.stock_quantity),
         low_stock_threshold: Number(form.low_stock_threshold),
         image_url: form.image_url || null,
@@ -149,6 +162,15 @@ function Products() {
           item_id: recipe.item_id,
           quantity_required: Number(recipe.quantity_required),
         })),
+        variants: isRecipeCategory ? variants.map((variant) => ({
+          ...(variant.id ? { id: variant.id } : {}),
+          name: variant.name,
+          price: Number(variant.price),
+          recipes: variant.recipes.filter((recipe) => recipe.item_id && Number(recipe.quantity_required) > 0).map((recipe) => ({
+            item_id: recipe.item_id,
+            quantity_required: Number(recipe.quantity_required),
+          })),
+        })) : [],
       };
 
       await save({ data: payload });
@@ -156,7 +178,7 @@ function Products() {
       qc.invalidateQueries({ queryKey: ["products"] });
       qc.invalidateQueries({ queryKey: ["productRecipes"] });
       setOpen(false); setForm(blank);
-      setRecipes([]);
+      setRecipes([]); setVariants([]);
     } catch (e: any) { toast.error(e.message); }
   };
 
@@ -217,7 +239,7 @@ function Products() {
               onChange={(e) => setSearchQuery(e.target.value)}
             />
             {isAdmin && (
-              <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) { setForm(blank); setRecipes([]); } }}>
+                <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) { setForm(blank); setRecipes([]); setVariants([]); } }}>
                 <DialogTrigger asChild><Button><Plus className="mr-1 h-4 w-4" /> New Product</Button></DialogTrigger>
                 <DialogContent className="overflow-y-auto">
                   <DialogHeader><DialogTitle>{form.id ? "Edit" : "New"} Product</DialogTitle></DialogHeader>
@@ -232,7 +254,7 @@ function Products() {
                       </Select>
                     </div>
                     <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-1.5"><Label>Price</Label><Input type="number" step="0.01" min="0" required value={form.price} onChange={e => setForm({ ...form, price: e.target.value })} /></div>
+                      {!isRecipeCategory && <div className="space-y-1.5"><Label>Price</Label><Input type="number" step="0.01" min="0" required value={form.price} onChange={e => setForm({ ...form, price: e.target.value })} /></div>}
                       <div className="space-y-1.5"><Label>Stock Qty{isRecipeCategory || hasRecipeIngredients ? " (optional)" : ""}</Label><Input type="number" min="0" required={!isRecipeCategory && !hasRecipeIngredients} disabled={isRecipeCategory || hasRecipeIngredients} value={form.stock_quantity} onChange={e => setForm({ ...form, stock_quantity: e.target.value })} /></div>
                       <div className="space-y-1.5"><Label>Low Stock Alert{isRecipeCategory || hasRecipeIngredients ? " (optional)" : ""}</Label><Input type="number" min="0" required={!isRecipeCategory && !hasRecipeIngredients} disabled={isRecipeCategory || hasRecipeIngredients} value={form.low_stock_threshold} onChange={e => setForm({ ...form, low_stock_threshold: e.target.value })} /></div>
                     </div>
@@ -247,7 +269,7 @@ function Products() {
                         {form.image_url && <Button type="button" variant="ghost" size="sm" onClick={() => setForm({ ...form, image_url: "" })}>Remove</Button>}
                       </div>
                     </div>
-                    <div className="space-y-2 border-t pt-3">
+                    {!isRecipeCategory && <div className="space-y-2 border-t pt-3">
                       <Label>Recipe / Ingredients</Label>
                       {recipes.map((recipe, index) => {
                         const ingredient = (ingredients as any[]).find((item) => item.id === recipe.item_id);
@@ -262,7 +284,29 @@ function Products() {
                         </div>;
                       })}
                       <Button type="button" variant="outline" onClick={() => setRecipes((current) => [...current, { item_id: "", quantity_required: "" }])}><Plus className="mr-1 h-4 w-4" /> Add ingredient</Button>
-                    </div>
+                    </div>}
+                    {isRecipeCategory && <div className="space-y-3 border-t pt-3">
+                      <div className="flex items-center justify-between"><Label>Ingredients by Size</Label><Button type="button" variant="outline" size="sm" onClick={() => setVariants((current) => [...current, { name: "", price: "", recipes: [] }])}><Plus className="mr-1 h-4 w-4" /> Add size</Button></div>
+                      {variants.map((variant, variantIndex) => <div key={variant.id ?? variantIndex} className="space-y-2 rounded-md border p-3">
+                        <div className="grid grid-cols-2 gap-2">
+                          <Input placeholder="Size name" required value={variant.name} onChange={(e) => setVariants((current) => current.map((row, index) => index === variantIndex ? { ...row, name: e.target.value } : row))} />
+                          <Input placeholder="Price" type="number" min="0" step="0.01" required value={variant.price} onChange={(e) => setVariants((current) => current.map((row, index) => index === variantIndex ? { ...row, price: e.target.value } : row))} />
+                        </div>
+                        {variant.recipes.map((recipe, recipeIndex) => {
+                          const ingredient = (ingredients as any[]).find((item) => item.id === recipe.item_id);
+                          return <div key={`${recipe.item_id}-${recipeIndex}`} className="flex items-center gap-2">
+                            <Select value={recipe.item_id} onValueChange={(value) => setVariants((current) => current.map((row, index) => index === variantIndex ? { ...row, recipes: row.recipes.map((item, itemIndex) => itemIndex === recipeIndex ? { ...item, item_id: value } : item) } : row))}>
+                              <SelectTrigger className="flex-1"><SelectValue placeholder="Select ingredient" /></SelectTrigger>
+                              <SelectContent>{(ingredients as any[]).map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent>
+                            </Select>
+                            <Input className="w-24" type="number" min="0.001" step="any" required value={recipe.quantity_required} onChange={(e) => setVariants((current) => current.map((row, index) => index === variantIndex ? { ...row, recipes: row.recipes.map((item, itemIndex) => itemIndex === recipeIndex ? { ...item, quantity_required: e.target.value } : item) } : row))} />
+                            <span className="w-8 text-xs text-muted-foreground">{ingredient?.unit ?? "-"}</span>
+                            <Button type="button" size="icon" variant="ghost" onClick={() => setVariants((current) => current.map((row, index) => index === variantIndex ? { ...row, recipes: row.recipes.filter((_, itemIndex) => itemIndex !== recipeIndex) } : row))}><Trash2 className="h-4 w-4" /></Button>
+                          </div>;
+                        })}
+                        <div className="flex justify-between"><Button type="button" variant="outline" size="sm" onClick={() => setVariants((current) => current.map((row, index) => index === variantIndex ? { ...row, recipes: [...row.recipes, { item_id: "", quantity_required: "" }] } : row))}><Plus className="mr-1 h-4 w-4" /> Add ingredient</Button><Button type="button" variant="ghost" size="sm" className="text-destructive" onClick={() => setVariants((current) => current.filter((_, index) => index !== variantIndex))}><Trash2 className="mr-1 h-4 w-4" /> Delete size</Button></div>
+                      </div>)}
+                    </div>}
                     <div className="sticky bottom-0 z-10 -mx-5 mt-4 border-t bg-background px-5 pb-1 pt-3 sm:-mx-6 sm:px-6">
                       <div className="flex justify-end gap-2">
                         <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>

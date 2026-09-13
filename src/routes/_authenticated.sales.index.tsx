@@ -36,7 +36,7 @@ export const Route = createFileRoute("/_authenticated/sales/")({
 
 const peso = (n: number) => "₱" + Number(n).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-type CartItem = { product_id: string; name: string; price: number; quantity: number; stock: number };
+type CartItem = { product_id: string; variant_id?: string; name: string; variant_name?: string; price: number; quantity: number; stock: number };
 
 const clearPersistedPosState = () => {
   if (typeof window === "undefined") return;
@@ -60,6 +60,7 @@ function SalesPOS() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [receipt, setReceipt] = useState<any>(null);
   const [busy, setBusy] = useState(false);
+  const [variantProduct, setVariantProduct] = useState<any>(null);
 
   useEffect(() => {
     clearPersistedPosState();
@@ -70,22 +71,29 @@ function SalesPOS() {
     safeProducts.filter((p: any) => p?.is_active && typeof p?.name === "string" && p.name.toLowerCase().includes(search.toLowerCase())),
     [safeProducts, search]);
 
-  const addToCart = (p: any) => {
-    if (p.available_stock <= 0) return toast.error("Out of stock");
+  const addToCart = (p: any, variant?: any) => {
+    const isRecipeBased = p.inventory_type === "recipe_based";
+    if (!variant && isRecipeBased && (p.product_variants?.length ?? 0) > 0) {
+      setVariantProduct(p);
+      return;
+    }
+    if (!isRecipeBased && p.available_stock <= 0) return toast.error("Out of stock");
+    const cartId = variant?.id ?? p.id;
     setCart(prev => {
-      const ex = prev.find(c => c.product_id === p.id);
+      const ex = prev.find(c => c.product_id === p.id && c.variant_id === variant?.id);
       if (ex) {
-        if (ex.quantity >= p.available_stock) { toast.error("No more stock"); return prev; }
-        return prev.map(c => c.product_id === p.id ? { ...c, quantity: c.quantity + 1 } : c);
+        if (!isRecipeBased && ex.quantity >= p.available_stock) { toast.error("No more stock"); return prev; }
+        return prev.map(c => c.product_id === p.id && c.variant_id === variant?.id ? { ...c, quantity: c.quantity + 1 } : c);
       }
-      return [...prev, { product_id: p.id, name: p.name, price: Number(p.price), quantity: 1, stock: p.available_stock }];
+      return [...prev, { product_id: p.id, variant_id: variant?.id, name: p.name, variant_name: variant?.name, price: Number(variant?.price ?? p.price), quantity: 1, stock: isRecipeBased ? Number.MAX_SAFE_INTEGER : p.available_stock }];
     });
+    setVariantProduct(null);
   };
 
-  const adjust = (id: string, delta: number) => setCart(prev =>
-    prev.map(c => c.product_id === id ? { ...c, quantity: Math.max(1, Math.min(c.stock, c.quantity + delta)) } : c)
+  const adjust = (item: CartItem, delta: number) => setCart(prev =>
+    prev.map(c => c.product_id === item.product_id && c.variant_id === item.variant_id ? { ...c, quantity: Math.max(1, Math.min(c.stock, c.quantity + delta)) } : c)
   );
-  const remove = (id: string) => setCart(prev => prev.filter(c => c.product_id !== id));
+  const remove = (item: CartItem) => setCart(prev => prev.filter(c => c.product_id !== item.product_id || c.variant_id !== item.variant_id));
 
   const subtotal = cart.reduce((s, c) => s + c.price * c.quantity, 0);
   const total = subtotal;
@@ -94,7 +102,7 @@ function SalesPOS() {
     if (cart.length === 0) return;
     setBusy(true);
     try {
-      const items = cart.map(c => ({ product_id: c.product_id, quantity: c.quantity, unit_price: c.price }));
+      const items = cart.map(c => ({ product_id: c.product_id, ...(c.variant_id ? { variant_id: c.variant_id } : {}), quantity: c.quantity, unit_price: c.price }));
       const res = await createFn({ data: { items } });
       setReceipt({ ...res, items: cart, ts: new Date() });
       setCart([]);
@@ -102,6 +110,8 @@ function SalesPOS() {
       qc.invalidateQueries({ queryKey: ["dashboard"] });
       qc.invalidateQueries({ queryKey: ["sales"] });
       qc.invalidateQueries({ queryKey: ["inventoryTxns"] });
+      qc.invalidateQueries({ queryKey: ["inventoryItems"] });
+      qc.invalidateQueries({ queryKey: ["inventoryMovements"] });
       toast.success(`Sale recorded · ${res.sale.receipt_number}`);
     } catch (e: any) { toast.error(e.message); }
     finally { setBusy(false); }
@@ -124,14 +134,14 @@ function SalesPOS() {
           </div>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             {filtered.map((p: any) => (
-              <button key={p.id} onClick={() => addToCart(p)} disabled={p.available_stock === 0}
+                <button key={p.id} onClick={() => addToCart(p)} disabled={p.inventory_type !== "recipe_based" && p.available_stock === 0}
                 className="group rounded-xl border bg-card p-4 text-left transition hover:border-primary hover:shadow-md disabled:opacity-40">
                 <ProductImage path={p.image_url} className="h-40 w-full rounded-md" />
                 <div className="mt-3 font-medium">{p.name}</div>
                 <div className="text-xs text-muted-foreground">{p.categories?.name}</div>
                 <div className="mt-2 flex items-center justify-between">
-                  <span className="font-semibold text-primary">{peso(p.price)}</span>
-                  <Badge variant={p.available_stock <= p.low_stock_threshold ? "destructive" : "secondary"}>{p.available_stock}</Badge>
+                  <span className="font-semibold text-primary">{p.inventory_type === "recipe_based" && p.product_variants?.length ? "Choose size" : peso(p.price)}</span>
+                  <Badge variant={p.inventory_type === "recipe_based" ? "secondary" : p.available_stock <= p.low_stock_threshold ? "destructive" : "secondary"}>{p.inventory_type === "recipe_based" ? "Recipe" : p.available_stock}</Badge>
                 </div>
               </button>
             ))}
@@ -146,14 +156,14 @@ function SalesPOS() {
                 {cart.map(c => (
                   <li key={c.product_id} className="flex items-center gap-2 rounded-md border p-2">
                     <div className="flex-1">
-                      <div className="text-sm font-medium">{c.name}</div>
+                      <div className="text-sm font-medium">{c.name}{c.variant_name ? ` (${c.variant_name})` : ""}</div>
                       <div className="text-xs text-muted-foreground">{peso(c.price)} each</div>
                     </div>
                     <div className="flex items-center gap-1">
-                      <Button size="icon" variant="outline" className="h-7 w-7" onClick={() => adjust(c.product_id, -1)}><Minus className="h-3 w-3" /></Button>
+                      <Button size="icon" variant="outline" className="h-7 w-7" onClick={() => adjust(c, -1)}><Minus className="h-3 w-3" /></Button>
                       <span className="w-6 text-center text-sm">{c.quantity}</span>
-                      <Button size="icon" variant="outline" className="h-7 w-7" onClick={() => adjust(c.product_id, 1)}><Plus className="h-3 w-3" /></Button>
-                      <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" onClick={() => remove(c.product_id)}><Trash2 className="h-3 w-3" /></Button>
+                      <Button size="icon" variant="outline" className="h-7 w-7" onClick={() => adjust(c, 1)}><Plus className="h-3 w-3" /></Button>
+                      <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" onClick={() => remove(c)}><Trash2 className="h-3 w-3" /></Button>
                     </div>
                   </li>
                 ))}
@@ -168,6 +178,15 @@ function SalesPOS() {
           </CardContent>
         </Card>
       </div>
+
+      <Dialog open={!!variantProduct} onOpenChange={(open) => !open && setVariantProduct(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>{variantProduct?.name} sizes</DialogTitle></DialogHeader>
+          <div className="grid gap-2">
+            {(variantProduct?.product_variants ?? []).map((variant: any) => <Button key={variant.id} variant="outline" className="justify-between" onClick={() => addToCart(variantProduct, variant)}><span>{variant.name}</span><span>{peso(variant.price)}</span></Button>)}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!receipt} onOpenChange={(o) => !o && setReceipt(null)}>
         <DialogContent className="max-w-sm">

@@ -165,6 +165,33 @@ export type Database = {
         }
         Relationships: []
       }
+      product_variants: {
+        Row: {
+          id: string
+          product_id: string
+          name: string
+          price: number
+          recipes: Json
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          product_id: string
+          name: string
+          price: number
+          recipes?: Json
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          product_id?: string
+          name?: string
+          price?: number
+          recipes?: Json
+          created_at?: string
+        }
+        Relationships: []
+      }
       products: {
         Row: {
           category_id: string | null
