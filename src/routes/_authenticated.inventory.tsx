@@ -163,9 +163,9 @@ function Inventory() {
                 const remainingStock = Math.max(0, isIngredient ? Number(item.current_stock ?? 0) : Number(item.stock_quantity ?? 0));
                 const initialStock = isIngredient
                   ? Math.max(0, Number(item.initial_stock ?? 0))
-                  : Math.max(0, Number(remainingStock + Number(item.sold_quantity ?? 0)));
-                const addedStock = isIngredient ? Math.max(0, Number(item.added_stock ?? 0)) : 0;
-                const usedStock = isIngredient ? Math.max(0, Number(item.total_used ?? 0)) : Math.max(0, Number(item.sold_quantity ?? 0));
+                  : Math.max(0, remainingStock + Number(item.total_used ?? item.sold_quantity ?? 0));
+                const addedStock = isIngredient ? Math.max(0, Number(item.added_stock ?? 0)) : Math.max(0, Number(item.added_stock ?? 0));
+                const usedStock = isIngredient ? Math.max(0, Number(item.total_used ?? 0)) : Math.max(0, Number(item.total_used ?? item.sold_quantity ?? 0));
                 const threshold = Math.max(0, Number(item.low_stock_threshold ?? 0));
                 const low = Number(remainingStock) <= threshold;
                 return (

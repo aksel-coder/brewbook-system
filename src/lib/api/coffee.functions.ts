@@ -395,9 +395,8 @@ export const createSale = createServerFn({ method: "POST" })
     const receipt = "CZ-" + Date.now().toString(36).toUpperCase();
 
     const productIds = [...new Set(data.items.map((item) => item.product_id))];
-    const { data: productsData, error: productLookupError } = await supabase
-      .from("products")
-      .select("id, name, stock_quantity, category_id, categories(category_type)")
+    const { data: productsData, error: productLookupError } = await (supabase.from("products") as any)
+      .select("id, name, stock_quantity, total_used, category_id, categories(category_type)")
       .in("id", productIds);
     if (productLookupError) throw new Error(productLookupError.message);
 
@@ -428,7 +427,7 @@ export const createSale = createServerFn({ method: "POST" })
       return Array.isArray(variant.recipes) ? variant.recipes : [];
     };
 
-    const productMap = new Map((productsData ?? []).map((product) => [product.id, product]));
+    const productMap = new Map<string, any>((productsData ?? []).map((product: any) => [product.id, product]));
     for (const item of data.items) {
       const current = productMap.get(item.product_id);
       if (!current) throw new Error("Product not found");
@@ -475,6 +474,36 @@ export const createSale = createServerFn({ method: "POST" })
       data.items.map(i => ({ sale_id: sale.id, product_id: i.product_id, quantity: i.quantity, unit_price: i.unit_price }))
     );
     if (ie) throw new Error(ie.message);
+
+    const finishedSaleQuantities = new Map<string, number>();
+    for (const item of data.items) {
+      const current = productMap.get(item.product_id);
+      if (!current) continue;
+      const itemRecipes = recipesForItem(item);
+      const inventoryType = resolveCategoryInventoryType(normalizeCategoryType(current.categories?.category_type), itemRecipes);
+      if (inventoryType !== "recipe_based") {
+        finishedSaleQuantities.set(item.product_id, (finishedSaleQuantities.get(item.product_id) ?? 0) + item.quantity);
+      }
+    }
+
+    for (const [productId, quantitySold] of finishedSaleQuantities) {
+      const current = productMap.get(productId);
+      const { data: updated, error: updatedError } = await (supabase.from("products") as any)
+        .select("total_used")
+        .eq("id", productId)
+        .single();
+      if (updatedError) throw new Error(updatedError.message);
+
+      const usedBeforeSale = Number(current?.total_used ?? 0);
+      const usedAfterTrigger = Number(updated?.total_used ?? usedBeforeSale);
+      const missingUsed = quantitySold - Math.max(0, usedAfterTrigger - usedBeforeSale);
+      if (missingUsed > 0) {
+        const { error: usedUpdateError } = await (supabase.from("products") as any)
+          .update({ total_used: usedAfterTrigger + missingUsed })
+          .eq("id", productId);
+        if (usedUpdateError) throw new Error(usedUpdateError.message);
+      }
+    }
 
     for (const item of data.items) {
       const current = productMap.get(item.product_id);
@@ -536,35 +565,6 @@ export const createSale = createServerFn({ method: "POST" })
           }
         }
         continue;
-      }
-
-      const nextProductStock = Number(current.stock_quantity ?? 0) - item.quantity;
-      const { error: productUpdateError } = await supabase
-        .from("products")
-        .update({
-          stock_quantity: Math.max(nextProductStock, 0),
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", item.product_id);
-
-      if (productUpdateError) {
-        await supabase.from("sale_items").delete().eq("sale_id", sale.id);
-        await supabase.from("sales").delete().eq("id", sale.id);
-        throw new Error(productUpdateError.message);
-      }
-
-      const { error: productTxnError } = await supabase.from("inventory_transactions").insert({
-        product_id: item.product_id,
-        transaction_type: "sale",
-        quantity: -item.quantity,
-        reference: receipt,
-        created_by: userId,
-      });
-
-      if (productTxnError) {
-        await supabase.from("sale_items").delete().eq("sale_id", sale.id);
-        await supabase.from("sales").delete().eq("id", sale.id);
-        throw new Error(productTxnError.message);
       }
     }
 
@@ -728,24 +728,39 @@ export const adjustInventory = createServerFn({ method: "POST" })
 
     await requireInventoryWriteAccess(supabase, userId);
 
-    const { data: prod, error: pe } = await supabase.from("products").select("stock_quantity").eq("id", data.product_id).single();
+    const { data: prod, error: pe } = await (supabase.from("products") as any)
+      .select("stock_quantity, added_stock, total_used")
+      .eq("id", data.product_id)
+      .single();
     if (pe) throw new Error(pe.message);
     if (!prod) throw new Error("Product not found");
 
-    let newStock = Number(prod.stock_quantity ?? 0);
+    const quantity = Math.abs(data.quantity);
+    const currentStock = Number(prod.stock_quantity ?? 0);
+    const currentAdded = Number(prod.added_stock ?? 0);
+    const currentUsed = Number(prod.total_used ?? 0);
+    let newStock = currentStock;
+    let newAdded = currentAdded;
+    let newUsed = currentUsed;
     if (data.transaction_type === "in") {
-      newStock += Math.abs(data.quantity);
+      newAdded += quantity;
+      newStock += quantity;
     } else if (data.transaction_type === "out") {
-      newStock -= Math.abs(data.quantity);
+      newUsed += quantity;
+      newStock -= quantity;
     } else {
-      newStock = Math.max(0, data.quantity);
+      newStock = Math.max(0, quantity);
     }
 
     if (newStock < 0) throw new Error("Resulting stock cannot be negative");
 
-    const { data: updatedProduct, error: ue } = await supabase
-      .from("products")
-      .update({ stock_quantity: newStock, updated_at: new Date().toISOString() })
+    const { data: updatedProduct, error: ue } = await (supabase.from("products") as any)
+      .update({
+        added_stock: newAdded,
+        total_used: newUsed,
+        stock_quantity: newStock,
+        updated_at: new Date().toISOString(),
+      })
       .eq("id", data.product_id)
       .select("id, stock_quantity")
       .single();
@@ -756,7 +771,7 @@ export const adjustInventory = createServerFn({ method: "POST" })
     const { error: te } = await supabase.from("inventory_transactions").insert({
       product_id: data.product_id,
       transaction_type: data.transaction_type,
-      quantity: data.transaction_type === "out" ? -Math.abs(data.quantity) : data.quantity,
+      quantity: data.transaction_type === "out" ? -quantity : quantity,
       reference: data.reference ?? "manual",
       created_by: userId,
     });

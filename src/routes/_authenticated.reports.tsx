@@ -37,6 +37,30 @@ function getInventorySnapshotValue(product: any) {
   return Number.isFinite(rawValue) ? Math.max(0, rawValue) : 0;
 }
 
+type InventorySnapshotRow = {
+  id: string;
+  name: string;
+  stock: number;
+  stockLabel: string;
+  price: number;
+  value: number;
+};
+
+function getRecipeVariantServings(variant: any, inventoryById: Map<string, any>) {
+  const recipes = Array.isArray(variant?.recipes) ? variant.recipes : [];
+  if (recipes.length === 0) return 0;
+
+  const availableServings = recipes.map((recipe: any) => {
+    const itemId = recipe?.item_id ?? recipe?.ingredient_id;
+    const quantityRequired = Number(recipe?.quantity_required ?? recipe?.quantity);
+    const remainingStock = Number(inventoryById.get(itemId)?.current_stock ?? 0);
+    if (!itemId || !Number.isFinite(quantityRequired) || quantityRequired <= 0 || !Number.isFinite(remainingStock)) return 0;
+    return Math.floor(Math.max(0, remainingStock) / quantityRequired);
+  });
+
+  return Math.max(0, Math.min(...availableServings));
+}
+
 function downloadCSV(filename: string, rows: (string | number)[][]) {
   const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
   const blob = new Blob([csv], { type: "text/csv" });
@@ -167,6 +191,36 @@ function Reports() {
       recipesByProduct,
     });
   }, [products, inventoryItems, recipes]);
+
+  const inventorySnapshotRows = useMemo<InventorySnapshotRow[]>(() => {
+    const inventoryById = new Map((inventoryItems as any[]).map(item => [item.id, item]));
+    return (products as any[]).flatMap((product) => {
+      const variants = Array.isArray(product.product_variants) ? product.product_variants : [];
+      if (product.inventory_type !== "recipe_based" || variants.length === 0) {
+        return [{
+          id: product.id,
+          name: product.name,
+          stock: getInventorySnapshotStock(product),
+          stockLabel: String(getInventorySnapshotStock(product)),
+          price: Number(product.price ?? 0),
+          value: getInventorySnapshotValue(product),
+        }];
+      }
+
+      return variants.map((variant: any) => {
+        const stock = getRecipeVariantServings(variant, inventoryById);
+        const price = Number(variant.price ?? 0);
+        return {
+          id: `${product.id}-${variant.id}`,
+          name: `${product.name} - ${variant.name}`,
+          stock,
+          stockLabel: `${stock} servings`,
+          price,
+          value: stock * price,
+        };
+      });
+    });
+  }, [products, inventoryItems]);
 
   const exportSales = (label: string, data: any[]) => {
     const rows = data.map(s => [s.receipt_number, new Date(s.sale_date).toLocaleString(), Number(s.total_amount).toFixed(2)]);
@@ -307,21 +361,21 @@ function Reports() {
             <CardHeader className="flex-row items-center justify-between">
               <CardTitle className="font-display">Inventory Snapshot</CardTitle>
               <div className="flex flex-wrap gap-2">
-                <Button variant="outline" size="sm" onClick={() => printTable("Inventory", ["Product", "Stock", "Price", "Value"], (products as any[]).map(p => [p.name, getInventorySnapshotStock(p), peso(p.price), peso(getInventorySnapshotValue(p))]))}><Printer className="mr-1 h-4 w-4" /> Print</Button>
-                <Button variant="outline" size="sm" onClick={() => downloadPDF("Inventory", ["Product", "Stock", "Price", "Value"], (products as any[]).map(p => [p.name, getInventorySnapshotStock(p), peso(p.price), peso(getInventorySnapshotValue(p))]))}><FileText className="mr-1 h-4 w-4" /> PDF</Button>
+                <Button variant="outline" size="sm" onClick={() => printTable("Inventory", ["Product", "Stock", "Price", "Value"], inventorySnapshotRows.map(row => [row.name, row.stockLabel, peso(row.price), peso(row.value)]))}><Printer className="mr-1 h-4 w-4" /> Print</Button>
+                <Button variant="outline" size="sm" onClick={() => downloadPDF("Inventory", ["Product", "Stock", "Price", "Value"], inventorySnapshotRows.map(row => [row.name, row.stockLabel, peso(row.price), peso(row.value)]))}><FileText className="mr-1 h-4 w-4" /> PDF</Button>
               </div>
             </CardHeader>
             <CardContent>
               <PaginatedTable
-                items={products as any[]}
+                items={inventorySnapshotRows}
                 headers={<TableRow><TableHead>Product</TableHead><TableHead className="text-right">Stock</TableHead><TableHead className="text-right">Price</TableHead><TableHead className="text-right">Stock Value</TableHead></TableRow>}
-                getKey={p => p.id}
-                renderRow={p => (
+                getKey={row => row.id}
+                renderRow={row => (
                   <>
-                    <TableCell>{p.name}</TableCell>
-                    <TableCell className="text-right">{getInventorySnapshotStock(p)}</TableCell>
-                    <TableCell className="text-right">{peso(p.price)}</TableCell>
-                    <TableCell className="text-right">{peso(getInventorySnapshotValue(p))}</TableCell>
+                    <TableCell>{row.name}</TableCell>
+                    <TableCell className="text-right">{row.stockLabel}</TableCell>
+                    <TableCell className="text-right">{peso(row.price)}</TableCell>
+                    <TableCell className="text-right">{peso(row.value)}</TableCell>
                   </>
                 )}
               />
