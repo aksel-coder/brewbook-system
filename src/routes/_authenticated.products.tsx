@@ -89,21 +89,21 @@ function ProductTable({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {products.length === 0 ? <TableRow><TableCell colSpan={hasVariants ? 6 : 5} className="h-24 text-center text-muted-foreground">{emptyMessage}</TableCell></TableRow> : products.map((product) => {
+          {products.length === 0 ? <TableRow><TableCell colSpan={hasVariants ? 6 : 5} className="h-24 align-middle text-center text-muted-foreground">{emptyMessage}</TableCell></TableRow> : products.map((product) => {
             const variants = Array.isArray(product.product_variants) ? product.product_variants : [];
             return <TableRow key={product.id}>
-              <TableCell><ProductImage path={product.image_url} className="h-10 w-10 rounded-md border" /></TableCell>
-              <TableCell className="font-medium">{product.name}</TableCell>
-              <TableCell>{product.categories?.name ?? "—"}</TableCell>
-              <TableCell className="text-right align-top font-medium">{hasVariants ? formatPriceRange(variants) : peso(product.price)}</TableCell>
-              {hasVariants && <TableCell className="min-w-70 align-top">
+              <TableCell className="align-middle"><ProductImage path={product.image_url} className="h-14 w-14 rounded-lg border" /></TableCell>
+              <TableCell className="align-middle font-medium">{product.name}</TableCell>
+              <TableCell className="align-middle">{product.categories?.name ?? "—"}</TableCell>
+              <TableCell className="align-middle text-right font-medium">{hasVariants ? formatPriceRange(variants) : peso(product.price)}</TableCell>
+              {hasVariants && <TableCell className="min-w-70 align-middle">
                 <div className="space-y-2">
                   {variants.map((variant: any) => <div key={variant.id} className="rounded-md border bg-muted/20 px-2.5 py-2">
                     <div className="flex flex-wrap items-center gap-2">
                       <Badge variant="secondary" className="font-medium">{variant.name}</Badge>
                       <span className="text-sm font-semibold text-primary">{peso(Number(variant.price))}</span>
                     </div>
-                    <div className="mt-1 flex flex-wrap gap-x-1.5 gap-y-0.5">
+                    <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
                       {(Array.isArray(variant.recipes) ? variant.recipes : []).length > 0 ? variant.recipes.map((recipe: any, index: number) => {
                         const ingredient = recipeIngredients.find((item) => item.id === (recipe.item_id ?? recipe.ingredient_id));
                         const quantity = recipe.quantity_required ?? recipe.quantity;
@@ -113,8 +113,8 @@ function ProductTable({
                   </div>)}
                 </div>
               </TableCell>}
-              <TableCell className="text-right align-top">
-                {isAdmin && <div className="flex justify-end gap-1">
+              <TableCell className="align-middle text-right">
+                {isAdmin && <div className="flex items-center justify-end gap-1">
                   <Button size="icon" variant="ghost" onClick={() => onEdit(product)}><Pencil className="h-4 w-4" /></Button>
                   <AlertDialog>
                     <AlertDialogTrigger asChild><Button size="icon" variant="ghost" className="text-destructive"><Trash2 className="h-4 w-4" /></Button></AlertDialogTrigger>
@@ -260,6 +260,9 @@ function Products() {
       toast.success("Product saved");
       qc.invalidateQueries({ queryKey: ["products"] });
       qc.invalidateQueries({ queryKey: ["productRecipes"] });
+      qc.invalidateQueries({ queryKey: ["inventoryItems"] });
+      qc.invalidateQueries({ queryKey: ["inventoryMovements"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
       setOpen(false); setForm(blank);
       setRecipes([]); setVariants([]);
     } catch (e: any) { toast.error(e.message); }
@@ -336,7 +339,13 @@ function Products() {
                         <SelectContent>{(Array.isArray(categories) ? categories : []).map(c => <SelectItem key={c.id} value={c.id}>{c.name} ({c.category_type ?? "Finished Good"})</SelectItem>)}</SelectContent>
                       </Select>
                     </div>
-                    {!isRecipeCategory && <div className="space-y-1.5"><Label>Price</Label><Input type="number" step="0.01" min="0" required value={form.price} onChange={e => setForm({ ...form, price: e.target.value })} /></div>}
+                    {!isRecipeCategory && <>
+                      <div className="space-y-1.5"><Label>Price</Label><Input type="number" step="0.01" min="0" required value={form.price} onChange={e => setForm({ ...form, price: e.target.value })} /></div>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <div className="space-y-1.5"><Label>Stock Qty</Label><Input type="number" min="0" step="1" required={!form.id} disabled={!!form.id} value={form.stock_quantity} onChange={e => setForm({ ...form, stock_quantity: e.target.value })} /></div>
+                        <div className="space-y-1.5"><Label>Low Stock Alert</Label><Input type="number" min="0" step="1" required value={form.low_stock_threshold} onChange={e => setForm({ ...form, low_stock_threshold: e.target.value })} /></div>
+                      </div>
+                    </>}
                     <div className="space-y-1.5">
                       <Label>Product Image</Label>
                       <div className="flex items-center gap-3">

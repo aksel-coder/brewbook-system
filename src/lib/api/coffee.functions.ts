@@ -143,15 +143,26 @@ export const getDashboardStats = createServerFn({ method: "GET" })
 export const listProducts = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const [productsResult, salesResult, recipesResult] = await Promise.all([
+    const [productsResult, salesResult, recipesResult, transactionsResult] = await Promise.all([
       context.supabase.from("products").select("*, categories(id, name, category_type), product_variants(id, name, price, recipes)").order("name"),
       context.supabase.from("sales").select("id, sale_items(quantity, product_id)").order("sale_date", { ascending: false }),
       context.supabase.from("product_recipes").select("product_id, quantity_required, inventory_items(current_stock)"),
+      context.supabase.from("inventory_transactions").select("product_id, transaction_type, quantity, reference"),
     ]);
 
     if (productsResult.error) throw new Error(productsResult.error.message);
     if (salesResult.error) throw new Error(salesResult.error.message);
     if (recipesResult.error) throw new Error(recipesResult.error.message);
+    if (transactionsResult.error) throw new Error(transactionsResult.error.message);
+
+    const addedStockByProduct = new Map<string, number>();
+    for (const transaction of transactionsResult.data ?? []) {
+      if (transaction.transaction_type !== "in" || transaction.reference === "Initial finished good product creation") continue;
+      addedStockByProduct.set(
+        transaction.product_id,
+        (addedStockByProduct.get(transaction.product_id) ?? 0) + Number(transaction.quantity ?? 0),
+      );
+    }
 
     const recipesByProduct = new Map<string, any[]>();
     for (const recipe of recipesResult.data ?? []) {
@@ -166,7 +177,12 @@ export const listProducts = createServerFn({ method: "GET" })
       const availableStock = targetType === "recipe_based" && recipes.length > 0
         ? Math.min(...recipes.map((recipe) => Math.floor(Number(recipe.inventory_items?.current_stock ?? 0) / Number(recipe.quantity_required))))
         : Number(product.stock_quantity ?? 0);
-      return { ...product, inventory_type: targetType, available_stock: Math.max(0, availableStock) };
+      return {
+        ...product,
+        added_stock: Math.max(0, addedStockByProduct.get(product.id) ?? 0),
+        inventory_type: targetType,
+        available_stock: Math.max(0, availableStock),
+      };
     });
   });
 
@@ -281,7 +297,7 @@ export const upsertProduct = createServerFn({ method: "POST" })
     const { supabase, userId } = context;
     await requireAdminRole(supabase, userId, "product management");
 
-    const { recipes, variants, ...productData } = data;
+    const { recipes, variants, stock_quantity, ...editableProductData } = data;
     let productId = data.id;
 
     const { data: category, error: categoryError } = data.category_id
@@ -293,12 +309,28 @@ export const upsertProduct = createServerFn({ method: "POST" })
     }
 
     if (data.id) {
-      const { error } = await supabase.from("products").update({ ...productData, updated_at: new Date().toISOString() }).eq("id", data.id);
+      const { error } = await supabase.from("products").update({ ...editableProductData, updated_at: new Date().toISOString() }).eq("id", data.id);
       if (error) throw new Error(error.message);
     } else {
-      const { data: product, error } = await supabase.from("products").insert(productData).select("id").single();
+      const initialStock = category?.category_type === "recipe_based" ? 0 : stock_quantity;
+      const { data: product, error } = await (supabase.from("products") as any)
+        .insert({ ...editableProductData, stock_quantity: initialStock })
+        .select("id")
+        .single();
       if (error) throw new Error(error.message);
-      productId = product.id;
+      const createdProductId = product.id as string;
+      productId = createdProductId;
+
+      if (category?.category_type !== "recipe_based") {
+        const { error: movementError } = await supabase.from("inventory_transactions").insert({
+          product_id: createdProductId,
+          transaction_type: "in",
+          quantity: initialStock,
+          reference: "Initial finished good product creation",
+          created_by: userId,
+        });
+        if (movementError) throw new Error(movementError.message);
+      }
     }
 
     if (!productId) throw new Error("Product id was not returned");
@@ -729,7 +761,7 @@ export const adjustInventory = createServerFn({ method: "POST" })
     await requireInventoryWriteAccess(supabase, userId);
 
     const { data: prod, error: pe } = await (supabase.from("products") as any)
-      .select("stock_quantity, added_stock, total_used")
+      .select("stock_quantity, total_used")
       .eq("id", data.product_id)
       .single();
     if (pe) throw new Error(pe.message);
@@ -737,13 +769,10 @@ export const adjustInventory = createServerFn({ method: "POST" })
 
     const quantity = Math.abs(data.quantity);
     const currentStock = Number(prod.stock_quantity ?? 0);
-    const currentAdded = Number(prod.added_stock ?? 0);
     const currentUsed = Number(prod.total_used ?? 0);
     let newStock = currentStock;
-    let newAdded = currentAdded;
     let newUsed = currentUsed;
     if (data.transaction_type === "in") {
-      newAdded += quantity;
       newStock += quantity;
     } else if (data.transaction_type === "out") {
       newUsed += quantity;
@@ -756,13 +785,12 @@ export const adjustInventory = createServerFn({ method: "POST" })
 
     const { data: updatedProduct, error: ue } = await (supabase.from("products") as any)
       .update({
-        added_stock: newAdded,
         total_used: newUsed,
         stock_quantity: newStock,
         updated_at: new Date().toISOString(),
       })
       .eq("id", data.product_id)
-      .select("id, stock_quantity")
+      .select("id, stock_quantity, total_used")
       .single();
 
     if (ue) throw new Error(ue.message);
