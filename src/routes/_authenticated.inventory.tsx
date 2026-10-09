@@ -178,14 +178,13 @@ function Inventory() {
                 <TableHead className="text-right">Used</TableHead>
                 <TableHead className="text-right">Remaining</TableHead>
                 <TableHead>Unit</TableHead>
-                <TableHead className="text-right">Low Stock</TableHead>
                 <TableHead>Status</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {stockPagination.total === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="h-24 text-center text-muted-foreground">
+                  <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
                     {stockSearch.trim()
                       ? `No inventory items found matching "${stockSearch.trim()}".`
                       : "No inventory items found."}
@@ -200,7 +199,12 @@ function Inventory() {
                 const addedStock = isIngredient ? Math.max(0, Number(item.added_stock ?? 0)) : Math.max(0, Number(item.added_stock ?? 0));
                 const usedStock = isIngredient ? Math.max(0, Number(item.total_used ?? 0)) : Math.max(0, Number(item.total_used ?? item.sold_quantity ?? 0));
                 const threshold = Math.max(0, Number(item.low_stock_threshold ?? 0));
-                const low = Number(remainingStock) <= threshold;
+                const stockStatus =
+                  remainingStock <= 0
+                    ? "Out of Stock"
+                    : remainingStock <= threshold
+                      ? "Low Stock"
+                      : "In Stock";
                 return (
                   <TableRow key={item.id}>
                     <TableCell className="font-medium">{item.name}</TableCell>
@@ -210,10 +214,16 @@ function Inventory() {
                     <TableCell className="text-right">{usedStock}</TableCell>
                     <TableCell className="text-right">{remainingStock}</TableCell>
                     <TableCell>{isIngredient ? item.unit : "pcs"}</TableCell>
-                    <TableCell className="text-right">{threshold}</TableCell>
                     <TableCell>
-                      <Badge variant={low ? "destructive" : "secondary"}>
-                        {low ? "Low Stock" : "Healthy"}
+                      <Badge
+                        variant={stockStatus === "Out of Stock" ? "destructive" : "secondary"}
+                        className={
+                          stockStatus === "Low Stock"
+                            ? "border-warning text-warning"
+                            : undefined
+                        }
+                      >
+                        {stockStatus}
                       </Badge>
                     </TableCell>
                   </TableRow>

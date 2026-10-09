@@ -196,7 +196,7 @@ export const createCustomerPhotoUpload = createServerFn({ method: "POST" })
       !(extension in photoTypeByExtension) ||
       photoTypeByExtension[extension as keyof typeof photoTypeByExtension] !== data.content_type
     ) {
-      throw new Error("Choose a JPG, PNG, or WebP customer photo.");
+      throw new Error("The captured photo must be a JPEG, PNG, or WebP image.");
     }
 
     const path = `incoming/${randomUUID()}.${extension}`;
@@ -224,7 +224,7 @@ export const createCustomerReservation = createServerFn({ method: "POST" })
       throw new Error("Customer reservations are not configured on the server.");
     }
     if (!verifyUploadProof(data.photo_path, data.photo_upload_proof)) {
-      throw new Error("The customer photo upload has expired. Please select the photo again.");
+      throw new Error("The customer photo upload has expired. Please take the photo again.");
     }
 
     const existingReservation = await getReservationByPhotoPath(data.photo_path);
@@ -237,7 +237,9 @@ export const createCustomerReservation = createServerFn({ method: "POST" })
       .from(PHOTO_BUCKET)
       .download(data.photo_path);
     if (photoError || !photo) {
-      throw new Error("The customer photo upload could not be verified. Please upload it again.");
+      throw new Error(
+        "The customer photo upload could not be verified. Please take the photo again.",
+      );
     }
     if (photo.size > MAX_PHOTO_BYTES) {
       await removeRejectedPhoto(data.photo_path, "The customer photo must be 5 MB or smaller.");

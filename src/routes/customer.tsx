@@ -6,13 +6,13 @@ import {
   ArrowLeft,
   ArrowRight,
   CalendarDays,
+  Camera,
   Coffee,
-  ImagePlus,
   Minus,
   Plus,
+  RotateCcw,
   ShoppingBag,
   Trash2,
-  Upload,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -96,6 +96,8 @@ function ReservationCartSummary({
 
 const MAX_CUSTOMER_PHOTO_BYTES = 5 * 1024 * 1024;
 const CUSTOMER_PHOTO_TYPES = ["image/jpeg", "image/png", "image/webp"];
+const CAMERA_UNAVAILABLE_MESSAGE =
+  "Camera unavailable. Please enable camera access or use a device with a working camera.";
 
 type CustomerReservationReceipt = {
   reservation_number: string;
@@ -112,9 +114,10 @@ type CustomerPhotoUploadAttempt = {
 };
 
 const CUSTOMER_SUBMISSION_ERRORS = new Set([
-  "Choose a JPG, PNG, or WebP customer photo.",
-  "The customer photo upload has expired. Please select the photo again.",
-  "The customer photo upload could not be verified. Please upload it again.",
+  "The captured photo must be a JPEG, PNG, or WebP image.",
+  "Take a customer photo before continuing.",
+  "The customer photo upload has expired. Please take the photo again.",
+  "The customer photo upload could not be verified. Please take the photo again.",
   "Enter a valid customer name",
   "Enter a valid contact number",
   "Pickup date cannot be in the past",
@@ -194,14 +197,55 @@ function CustomerPage() {
   const [customerPhoto, setCustomerPhoto] = useState<File | null>(null);
   const [customerPhotoUrl, setCustomerPhotoUrl] = useState<string | null>(null);
   const [photoError, setPhotoError] = useState("");
+  const [cameraError, setCameraError] = useState("");
+  const [isCameraOpen, setIsCameraOpen] = useState(false);
+  const [isCameraReady, setIsCameraReady] = useState(false);
+  const [isStartingCamera, setIsStartingCamera] = useState(false);
   const [isSubmittingReservation, setIsSubmittingReservation] = useState(false);
   const [reservationError, setReservationError] = useState("");
   const [reservationReceipt, setReservationReceipt] = useState<CustomerReservationReceipt | null>(
     null,
   );
-  const photoInputRef = useRef<HTMLInputElement>(null);
+  const cameraVideoRef = useRef<HTMLVideoElement>(null);
+  const cameraStartButtonRef = useRef<HTMLButtonElement>(null);
+  const cameraStreamRef = useRef<MediaStream | null>(null);
+  const cameraRequestRef = useRef(0);
   const isSubmittingReservationRef = useRef(false);
   const customerPhotoUploadAttemptRef = useRef<CustomerPhotoUploadAttempt | null>(null);
+
+  const closeCamera = () => {
+    cameraRequestRef.current += 1;
+    cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
+    cameraStreamRef.current = null;
+    setIsStartingCamera(false);
+    setIsCameraReady(false);
+    setIsCameraOpen(false);
+  };
+
+  useEffect(() => {
+    return () => {
+      cameraRequestRef.current += 1;
+      cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
+      cameraStreamRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isCameraOpen || !cameraStreamRef.current || !cameraVideoRef.current) return;
+    const video = cameraVideoRef.current;
+    video.srcObject = cameraStreamRef.current;
+    void video.play().catch(() => {
+      setCameraError(CAMERA_UNAVAILABLE_MESSAGE);
+      cameraRequestRef.current += 1;
+      cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
+      cameraStreamRef.current = null;
+      setIsCameraReady(false);
+      setIsCameraOpen(false);
+    });
+    return () => {
+      video.srcObject = null;
+    };
+  }, [isCameraOpen]);
 
   useEffect(() => {
     if (!customerPhoto) {
@@ -213,16 +257,76 @@ function CustomerPage() {
     return () => URL.revokeObjectURL(objectUrl);
   }, [customerPhoto]);
 
+  const startCamera = async () => {
+    if (isStartingCamera) return;
+    setCameraError("");
+    setPhotoError("");
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCameraError(CAMERA_UNAVAILABLE_MESSAGE);
+      return;
+    }
+
+    const requestId = ++cameraRequestRef.current;
+    setIsStartingCamera(true);
+    setIsCameraReady(false);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: { facingMode: "user" },
+      });
+      if (requestId !== cameraRequestRef.current) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
+      cameraStreamRef.current = stream;
+      setIsCameraOpen(true);
+    } catch {
+      if (requestId === cameraRequestRef.current) {
+        setCameraError(CAMERA_UNAVAILABLE_MESSAGE);
+      }
+    } finally {
+      if (requestId === cameraRequestRef.current) setIsStartingCamera(false);
+    }
+  };
+
+  const captureCustomerPhoto = () => {
+    const video = cameraVideoRef.current;
+    if (!video || video.videoWidth === 0 || video.videoHeight === 0) {
+      setCameraError(CAMERA_UNAVAILABLE_MESSAGE);
+      return;
+    }
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const context = canvas.getContext("2d");
+    if (!context) {
+      setCameraError(CAMERA_UNAVAILABLE_MESSAGE);
+      return;
+    }
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    canvas.toBlob(
+      (blob) => {
+        if (!blob) {
+          setPhotoError("The photo could not be captured. Please try again.");
+          return;
+        }
+        const photo = new File([blob], "customer-selfie.jpg", { type: "image/jpeg" });
+        closeCamera();
+        handleCustomerPhoto(photo);
+      },
+      "image/jpeg",
+      0.9,
+    );
+  };
+
   const handleCustomerPhoto = (file: File | undefined) => {
     if (!file) return;
     if (!CUSTOMER_PHOTO_TYPES.includes(file.type)) {
-      setPhotoError("Choose a JPG, PNG, or WebP image.");
-      if (photoInputRef.current) photoInputRef.current.value = "";
+      setPhotoError("The captured photo must be a JPEG, PNG, or WebP image.");
       return;
     }
     if (file.size > MAX_CUSTOMER_PHOTO_BYTES) {
       setPhotoError("The customer photo must be 5 MB or smaller.");
-      if (photoInputRef.current) photoInputRef.current.value = "";
       return;
     }
     setCustomerPhoto(file);
@@ -234,8 +338,8 @@ function CustomerPage() {
     event.preventDefault();
     if (!event.currentTarget.reportValidity()) return;
     if (!customerPhoto) {
-      setPhotoError("A customer photo is required.");
-      photoInputRef.current?.focus();
+      setPhotoError("Take a customer photo before continuing.");
+      cameraStartButtonRef.current?.focus();
       return;
     }
     setPhotoError("");
@@ -247,7 +351,7 @@ function CustomerPage() {
     if (isSubmittingReservationRef.current) return;
     const contentType = customerPhoto ? getCustomerPhotoContentType(customerPhoto) : null;
     if (!customerPhoto || !contentType) {
-      setPhotoError("Choose a JPG, PNG, or WebP customer photo.");
+      setPhotoError("Take a customer photo before continuing.");
       return;
     }
     if (cartLines.length === 0) {
@@ -308,7 +412,7 @@ function CustomerPage() {
       customerPhotoUploadAttemptRef.current = null;
       setCart([]);
       setCustomerPhoto(null);
-      if (photoInputRef.current) photoInputRef.current.value = "";
+      closeCamera();
       setFullName("");
       setContactNumber("");
       setPickupDate("");
@@ -457,7 +561,10 @@ function CustomerPage() {
                 type="button"
                 variant="ghost"
                 size="sm"
-                onClick={() => setReservationOpen(false)}
+                onClick={() => {
+                  closeCamera();
+                  setReservationOpen(false);
+                }}
               >
                 <ArrowLeft className="h-4 w-4" /> <span className="hidden sm:inline">Menu</span>
               </Button>
@@ -542,6 +649,7 @@ function CustomerPage() {
                     type="button"
                     className="w-full"
                     onClick={() => {
+                      closeCamera();
                       setReservationReceipt(null);
                       setReservationOpen(false);
                     }}
@@ -587,12 +695,10 @@ function CustomerPage() {
                         <div className="flex items-center gap-3">
                           <img
                             src={customerPhotoUrl}
-                            alt="Selected customer photo preview"
+                            alt="Captured customer selfie preview"
                             className="h-20 w-20 rounded-lg border object-cover"
                           />
-                          <span className="break-all text-sm font-medium">
-                            {customerPhoto.name}
-                          </span>
+                          <span className="text-sm font-medium">Selfie captured</span>
                         </div>
                       </div>
                     )}
@@ -701,26 +807,42 @@ function CustomerPage() {
                           Customer Photo <span className="text-destructive">*</span>
                         </p>
                         <p className="mt-1 text-xs text-muted-foreground">
-                          JPG, PNG, or WebP · up to 5 MB. No ID photo is needed.
+                          Take a live selfie using your camera. JPEG, PNG, or WebP · up to 5 MB.
                         </p>
                       </div>
-                      <input
-                        ref={photoInputRef}
-                        type="file"
-                        accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
-                        className="sr-only"
-                        aria-label="Choose customer photo"
-                        onChange={(event) => handleCustomerPhoto(event.target.files?.[0])}
-                      />
-                      {customerPhotoUrl && customerPhoto ? (
+                      {isCameraOpen ? (
+                        <div className="space-y-3 rounded-lg border p-3">
+                          <video
+                            ref={cameraVideoRef}
+                            autoPlay
+                            muted
+                            playsInline
+                            onLoadedMetadata={() => setIsCameraReady(true)}
+                            aria-label="Live customer selfie camera preview"
+                            className="max-h-80 w-full rounded-md bg-black object-contain"
+                          />
+                          <div className="flex flex-wrap gap-2">
+                            <Button
+                              type="button"
+                              disabled={!isCameraReady}
+                              onClick={captureCustomerPhoto}
+                            >
+                              <Camera className="h-4 w-4" /> Capture Photo
+                            </Button>
+                            <Button type="button" variant="outline" onClick={closeCamera}>
+                              <X className="h-4 w-4" /> Close Camera
+                            </Button>
+                          </div>
+                        </div>
+                      ) : customerPhotoUrl && customerPhoto ? (
                         <div className="flex flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-center">
                           <img
                             src={customerPhotoUrl}
-                            alt="Selected customer photo preview"
+                            alt="Captured customer selfie preview"
                             className="h-28 w-28 rounded-md border object-cover"
                           />
                           <div className="min-w-0 flex-1">
-                            <p className="break-all text-sm font-medium">{customerPhoto.name}</p>
+                            <p className="text-sm font-medium">Selfie captured</p>
                             <p className="mt-1 text-xs text-muted-foreground">
                               {(customerPhoto.size / (1024 * 1024)).toFixed(2)} MB · Private photo
                               upload happens when you place the reservation.
@@ -730,34 +852,31 @@ function CustomerPage() {
                                 type="button"
                                 size="sm"
                                 variant="outline"
-                                onClick={() => photoInputRef.current?.click()}
+                                disabled={isStartingCamera}
+                                onClick={startCamera}
                               >
-                                <Upload className="h-4 w-4" /> Replace photo
-                              </Button>
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => {
-                                  setCustomerPhoto(null);
-                                  customerPhotoUploadAttemptRef.current = null;
-                                  setPhotoError("");
-                                  if (photoInputRef.current) photoInputRef.current.value = "";
-                                }}
-                              >
-                                <X className="h-4 w-4" /> Remove
+                                <RotateCcw className="h-4 w-4" />
+                                {isStartingCamera ? "Starting camera..." : "Retake Photo"}
                               </Button>
                             </div>
                           </div>
                         </div>
                       ) : (
                         <Button
+                          ref={cameraStartButtonRef}
                           type="button"
                           variant="outline"
-                          onClick={() => photoInputRef.current?.click()}
+                          disabled={isStartingCamera}
+                          onClick={startCamera}
                         >
-                          <ImagePlus className="h-4 w-4" /> Choose customer photo
+                          <Camera className="h-4 w-4" />
+                          {isStartingCamera ? "Starting camera..." : "Take Live Selfie"}
                         </Button>
+                      )}
+                      {cameraError && (
+                        <p role="alert" className="text-sm text-destructive">
+                          {cameraError}
+                        </p>
                       )}
                       {photoError && (
                         <p role="alert" className="text-sm text-destructive">
@@ -781,7 +900,10 @@ function CustomerPage() {
                       <Button
                         type="button"
                         variant="outline"
-                        onClick={() => setReservationOpen(false)}
+                        onClick={() => {
+                          closeCamera();
+                          setReservationOpen(false);
+                        }}
                       >
                         <ArrowLeft className="h-4 w-4" /> Back to menu
                       </Button>

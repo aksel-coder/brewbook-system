@@ -1,26 +1,37 @@
 import { createFileRoute, Outlet, redirect, useRouter } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { getMyRole, claimFirstAdmin } from "@/lib/api/users.functions";
-import { Button } from "@/components/ui/button";
-import { toast } from "sonner";
-import { ShieldCheck } from "lucide-react";
+import { getMyRole } from "@/lib/api/users.functions";
+
+const adminOnlyPaths = new Set([
+  "/dashboard",
+  "/inventory",
+  "/products",
+  "/reservations",
+  "/reports",
+  "/users",
+]);
 
 export const Route = createFileRoute("/_authenticated")({
   ssr: false,
   beforeLoad: async ({ location }) => {
     const { data } = await supabase.auth.getSession();
-    if (data.session) return;
-
-    throw redirect({
-      to: "/login",
-      search: { redirect: location.href } as any,
-      replace: true,
-    });
+    if (!data.session) {
+      throw redirect({
+        to: "/login",
+        search: { redirect: location.href } as any,
+        replace: true,
+      });
+    }
+    const pathname = location.pathname.replace(/\/+$/, "") || "/";
+    if (adminOnlyPaths.has(pathname)) {
+      const role = await getMyRole();
+      if (!role.isAdmin) throw redirect({ to: "/sales", replace: true });
+    }
   },
   component: AuthLayout,
 });
@@ -29,14 +40,12 @@ function AuthLayout() {
   const router = useRouter();
   const qc = useQueryClient();
   const fetchRole = useServerFn(getMyRole);
-  const claim = useServerFn(claimFirstAdmin);
   const { data: me, refetch, isLoading: meLoading, isFetching: meFetching, error: meError } = useQuery({
     queryKey: ["me"],
     queryFn: () => fetchRole(),
     refetchOnWindowFocus: true,
     refetchOnMount: "always",
   });
-  const [claiming, setClaiming] = useState(false);
 
   useEffect(() => {
     console.log("[AuthLayout] session/role state:", {
@@ -79,20 +88,6 @@ function AuthLayout() {
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, [refetch, qc]);
 
-  const handleClaim = async () => {
-    setClaiming(true);
-    try {
-      await claim();
-      toast.success("You are now an administrator");
-      refetch();
-      qc.invalidateQueries({ queryKey: ["me"] });
-    } catch (e: any) {
-      toast.error(e.message);
-    } finally {
-      setClaiming(false);
-    }
-  };
-
   return (
     <SidebarProvider>
       <div className="flex min-h-screen w-full bg-background">
@@ -101,11 +96,6 @@ function AuthLayout() {
           <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b bg-card/80 px-4 backdrop-blur">
             <SidebarTrigger />
             <div className="flex-1" />
-            {me && !me.isAdmin && (
-              <Button variant="outline" size="sm" onClick={handleClaim} disabled={claiming}>
-                <ShieldCheck className="mr-1 h-4 w-4" /> Claim admin (first-time setup)
-              </Button>
-            )}
             {me && (
               <div className="hidden sm:flex items-center gap-2 text-sm">
                 <span className="text-muted-foreground">{me.fullName || me.username}</span>

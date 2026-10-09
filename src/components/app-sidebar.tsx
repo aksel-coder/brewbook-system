@@ -45,7 +45,7 @@ export function AppSidebar({ isAdmin }: { isAdmin: boolean }) {
         ...nav.slice(5),
         { title: "Users", url: "/users", icon: Users },
       ]
-    : nav;
+    : nav.filter((item) => item.url === "/sales" || item.url === "/sales/history");
 
   const signOut = async () => {
     await supabase.auth.signOut({ scope: "local" });

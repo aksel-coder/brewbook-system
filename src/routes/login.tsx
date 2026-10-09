@@ -1,6 +1,8 @@
 import { createFileRoute, useNavigate, redirect } from "@tanstack/react-router";
 import { useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
+import { getMyRole } from "@/lib/api/users.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,6 +16,12 @@ const safeRedirect = (value: unknown) => {
     return "/dashboard";
   }
   return value;
+};
+
+const cashierRedirect = (value: unknown) => {
+  const destination = safeRedirect(value);
+  const pathname = new URL(destination, window.location.origin).pathname.replace(/\/+$/, "") || "/";
+  return pathname === "/sales" || pathname === "/sales/history" ? destination : "/sales";
 };
 
 export const Route = createFileRoute("/login")({
@@ -34,6 +42,7 @@ export const Route = createFileRoute("/login")({
 
 function LoginPage() {
   const navigate = useNavigate();
+  const fetchRole = useServerFn(getMyRole);
   const search = Route.useSearch();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -46,8 +55,24 @@ function LoginPage() {
       const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) return toast.error(error.message);
       if (!data.session) return toast.error("Could not establish a session. Please try again.");
+      let isAdmin = false;
+      try {
+        const role = await fetchRole();
+        isAdmin = role.isAdmin;
+      } catch (error) {
+        toast.error(
+          error instanceof Error
+            ? `Signed in, but account access could not be verified: ${error.message}`
+            : "Signed in, but account access could not be verified.",
+        );
+        navigate({ to: "/sales", replace: true });
+        return;
+      }
       toast.success("Welcome back!");
-      navigate({ to: safeRedirect(search.redirect) as any, replace: true });
+      navigate({
+        to: (isAdmin ? safeRedirect(search.redirect) : cashierRedirect(search.redirect)) as any,
+        replace: true,
+      });
     } finally {
       setLoading(false);
     }
