@@ -15,6 +15,7 @@ import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { DataTablePagination } from "@/components/data-table-pagination";
 import { usePagination } from "@/hooks/use-pagination";
+import { Search } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/inventory")({
   head: () => ({ meta: [{ title: "Inventory — Coffee Zone" }] }),
@@ -50,7 +51,16 @@ function Inventory() {
         display_id: product.id,
       })),
   ], [items, products]);
-  const stockPagination = usePagination(stockRows);
+  const [stockSearch, setStockSearch] = useState("");
+  const filteredStockRows = useMemo(() => {
+    const searchTerm = stockSearch.trim().toLocaleLowerCase();
+    if (!searchTerm) return stockRows;
+
+    return stockRows.filter((item: any) =>
+      `${item.name ?? ""} ${item.category ?? ""}`.toLocaleLowerCase().includes(searchTerm),
+    );
+  }, [stockRows, stockSearch]);
+  const stockPagination = usePagination(filteredStockRows);
   const txnPagination = usePagination(txns as any[]);
 
   const [open, setOpen] = useState(false);
@@ -141,7 +151,22 @@ function Inventory() {
       </div>
 
       <Card>
-        <CardHeader><CardTitle className="font-display">Stock Levels</CardTitle></CardHeader>
+        <CardHeader className="flex-row flex-wrap items-center justify-between gap-3">
+          <CardTitle className="font-display">Stock Levels</CardTitle>
+          <div className="relative w-full sm:max-w-sm">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              aria-label="Search inventory items by name or category"
+              className="rounded-md pl-9"
+              placeholder="Search item name or category..."
+              value={stockSearch}
+              onChange={(event) => {
+                setStockSearch(event.target.value);
+                stockPagination.setPage(1);
+              }}
+            />
+          </div>
+        </CardHeader>
         <CardContent>
           <Table>
             <TableHeader>
@@ -158,7 +183,15 @@ function Inventory() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {stockPagination.paginatedItems.map((item: any) => {
+              {stockPagination.total === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={9} className="h-24 text-center text-muted-foreground">
+                    {stockSearch.trim()
+                      ? `No inventory items found matching "${stockSearch.trim()}".`
+                      : "No inventory items found."}
+                  </TableCell>
+                </TableRow>
+              ) : stockPagination.paginatedItems.map((item: any) => {
                 const isIngredient = item.kind === "ingredient";
                 const remainingStock = Math.max(0, isIngredient ? Number(item.current_stock ?? 0) : Number(item.stock_quantity ?? 0));
                 const initialStock = isIngredient

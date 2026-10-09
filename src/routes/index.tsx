@@ -103,6 +103,9 @@ function LandingPage() {
             <a href="#workflow" className="hover:text-foreground">Workflow</a>
           </nav>
           <div className="flex items-center gap-2">
+            <Button asChild variant="outline" size="sm">
+              <a href="/customer">Order as a customer</a>
+            </Button>
             <Button asChild variant="ghost" size="sm">
               <Link to="/login" search={{}}>Sign in</Link>
             </Button>

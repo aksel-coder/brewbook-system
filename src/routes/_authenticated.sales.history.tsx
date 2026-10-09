@@ -5,6 +5,7 @@ import { listSales } from "@/lib/api/coffee.functions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { DataTablePagination } from "@/components/data-table-pagination";
 import { usePagination } from "@/hooks/use-pagination";
@@ -35,9 +36,14 @@ function History() {
       "Sales History",
       ["Receipt", "Date", "Items", "Total"],
       filtered.map((s: any) => [
-        s.receipt_number,
+        `${s.receipt_number}${s.reservation?.reservation_number ? ` · Reservation ${s.reservation.reservation_number}` : ""}`,
         new Date(s.sale_date).toLocaleString(),
-        (s.sale_items ?? []).map((i: any) => `${i.quantity}× ${i.products?.name}`).join(", "),
+        (s.sale_items ?? [])
+          .map(
+            (i: any) =>
+              `${i.quantity}× ${i.products?.name}${i.variant_name ? ` (${i.variant_name})` : ""}`,
+          )
+          .join(", "),
         peso(s.total_amount),
       ]),
     );
@@ -72,12 +78,26 @@ function History() {
                 paginatedItems.length === 0 ? <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground">No sales</TableCell></TableRow> :
                 paginatedItems.map((s: any) => (
                   <TableRow key={s.id}>
-                    <TableCell className="font-mono text-xs">{s.receipt_number}</TableCell>
+                    <TableCell className="space-y-1 font-mono text-xs">
+                      <div>{s.receipt_number}</div>
+                      {s.reservation?.reservation_number && (
+                        <Badge variant="outline" className="font-sans font-normal">
+                          Reservation {s.reservation.reservation_number}
+                        </Badge>
+                      )}
+                    </TableCell>
                     <TableCell>{new Date(s.sale_date).toLocaleString()}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">
-                      {(s.sale_items ?? []).map((i: any) => `${i.quantity}× ${i.products?.name}`).join(", ")}
+                      {(s.sale_items ?? [])
+                        .map(
+                          (i: any) =>
+                            `${i.quantity}× ${i.products?.name}${i.variant_name ? ` (${i.variant_name})` : ""}`,
+                        )
+                        .join(", ")}
                     </TableCell>
-                    <TableCell className="text-right font-semibold">{peso(s.total_amount)}</TableCell>
+                    <TableCell className="text-right font-semibold">
+                      {peso(s.total_amount)}
+                    </TableCell>
                   </TableRow>
                 ))}
             </TableBody>

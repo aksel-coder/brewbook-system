@@ -10,10 +10,12 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as CustomerRouteImport } from './routes/customer'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as MainProjectRouteImport } from './routes/MainProject'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedUsersRouteImport } from './routes/_authenticated.users'
+import { Route as AuthenticatedReservationsRouteImport } from './routes/_authenticated.reservations'
 import { Route as AuthenticatedReportsRouteImport } from './routes/_authenticated.reports'
 import { Route as AuthenticatedProductsRouteImport } from './routes/_authenticated.products'
 import { Route as AuthenticatedInventoryRouteImport } from './routes/_authenticated.inventory'
@@ -24,6 +26,11 @@ import { Route as AuthenticatedSalesHistoryRouteImport } from './routes/_authent
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CustomerRoute = CustomerRouteImport.update({
+  id: '/customer',
+  path: '/customer',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedRoute = AuthenticatedRouteImport.update({
@@ -45,6 +52,12 @@ const AuthenticatedUsersRoute = AuthenticatedUsersRouteImport.update({
   path: '/users',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedReservationsRoute =
+  AuthenticatedReservationsRouteImport.update({
+    id: '/reservations',
+    path: '/reservations',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedReportsRoute = AuthenticatedReportsRouteImport.update({
   id: '/reports',
   path: '/reports',
@@ -80,11 +93,13 @@ const AuthenticatedSalesHistoryRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/MainProject': typeof MainProjectRoute
+  '/customer': typeof CustomerRoute
   '/login': typeof LoginRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/inventory': typeof AuthenticatedInventoryRoute
   '/products': typeof AuthenticatedProductsRoute
   '/reports': typeof AuthenticatedReportsRoute
+  '/reservations': typeof AuthenticatedReservationsRoute
   '/users': typeof AuthenticatedUsersRoute
   '/sales/history': typeof AuthenticatedSalesHistoryRoute
   '/sales/': typeof AuthenticatedSalesIndexRoute
@@ -92,11 +107,13 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/MainProject': typeof MainProjectRoute
+  '/customer': typeof CustomerRoute
   '/login': typeof LoginRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/inventory': typeof AuthenticatedInventoryRoute
   '/products': typeof AuthenticatedProductsRoute
   '/reports': typeof AuthenticatedReportsRoute
+  '/reservations': typeof AuthenticatedReservationsRoute
   '/users': typeof AuthenticatedUsersRoute
   '/sales/history': typeof AuthenticatedSalesHistoryRoute
   '/sales': typeof AuthenticatedSalesIndexRoute
@@ -106,11 +123,13 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/MainProject': typeof MainProjectRoute
   '/_authenticated': typeof AuthenticatedRouteWithChildren
+  '/customer': typeof CustomerRoute
   '/login': typeof LoginRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/inventory': typeof AuthenticatedInventoryRoute
   '/_authenticated/products': typeof AuthenticatedProductsRoute
   '/_authenticated/reports': typeof AuthenticatedReportsRoute
+  '/_authenticated/reservations': typeof AuthenticatedReservationsRoute
   '/_authenticated/users': typeof AuthenticatedUsersRoute
   '/_authenticated/sales/history': typeof AuthenticatedSalesHistoryRoute
   '/_authenticated/sales/': typeof AuthenticatedSalesIndexRoute
@@ -120,11 +139,13 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/MainProject'
+    | '/customer'
     | '/login'
     | '/dashboard'
     | '/inventory'
     | '/products'
     | '/reports'
+    | '/reservations'
     | '/users'
     | '/sales/history'
     | '/sales/'
@@ -132,11 +153,13 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/MainProject'
+    | '/customer'
     | '/login'
     | '/dashboard'
     | '/inventory'
     | '/products'
     | '/reports'
+    | '/reservations'
     | '/users'
     | '/sales/history'
     | '/sales'
@@ -145,11 +168,13 @@ export interface FileRouteTypes {
     | '/'
     | '/MainProject'
     | '/_authenticated'
+    | '/customer'
     | '/login'
     | '/_authenticated/dashboard'
     | '/_authenticated/inventory'
     | '/_authenticated/products'
     | '/_authenticated/reports'
+    | '/_authenticated/reservations'
     | '/_authenticated/users'
     | '/_authenticated/sales/history'
     | '/_authenticated/sales/'
@@ -159,6 +184,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   MainProjectRoute: typeof MainProjectRoute
   AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
+  CustomerRoute: typeof CustomerRoute
   LoginRoute: typeof LoginRoute
 }
 
@@ -169,6 +195,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/customer': {
+      id: '/customer'
+      path: '/customer'
+      fullPath: '/customer'
+      preLoaderRoute: typeof CustomerRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated': {
@@ -197,6 +230,13 @@ declare module '@tanstack/react-router' {
       path: '/users'
       fullPath: '/users'
       preLoaderRoute: typeof AuthenticatedUsersRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/reservations': {
+      id: '/_authenticated/reservations'
+      path: '/reservations'
+      fullPath: '/reservations'
+      preLoaderRoute: typeof AuthenticatedReservationsRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/reports': {
@@ -249,6 +289,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedInventoryRoute: typeof AuthenticatedInventoryRoute
   AuthenticatedProductsRoute: typeof AuthenticatedProductsRoute
   AuthenticatedReportsRoute: typeof AuthenticatedReportsRoute
+  AuthenticatedReservationsRoute: typeof AuthenticatedReservationsRoute
   AuthenticatedUsersRoute: typeof AuthenticatedUsersRoute
   AuthenticatedSalesHistoryRoute: typeof AuthenticatedSalesHistoryRoute
   AuthenticatedSalesIndexRoute: typeof AuthenticatedSalesIndexRoute
@@ -259,6 +300,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedInventoryRoute: AuthenticatedInventoryRoute,
   AuthenticatedProductsRoute: AuthenticatedProductsRoute,
   AuthenticatedReportsRoute: AuthenticatedReportsRoute,
+  AuthenticatedReservationsRoute: AuthenticatedReservationsRoute,
   AuthenticatedUsersRoute: AuthenticatedUsersRoute,
   AuthenticatedSalesHistoryRoute: AuthenticatedSalesHistoryRoute,
   AuthenticatedSalesIndexRoute: AuthenticatedSalesIndexRoute,
@@ -272,6 +314,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   MainProjectRoute: MainProjectRoute,
   AuthenticatedRoute: AuthenticatedRouteWithChildren,
+  CustomerRoute: CustomerRoute,
   LoginRoute: LoginRoute,
 }
 export const routeTree = rootRouteImport

@@ -1,8 +1,27 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { LayoutDashboard, ShoppingCart, Package, Boxes, BarChart3, Users, LogOut, Coffee, History } from "lucide-react";
 import {
-  Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel,
-  SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, SidebarFooter,
+  LayoutDashboard,
+  ShoppingCart,
+  Package,
+  Boxes,
+  BarChart3,
+  Users,
+  LogOut,
+  Coffee,
+  History,
+  ClipboardList,
+} from "lucide-react";
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarHeader,
+  SidebarFooter,
 } from "@/components/ui/sidebar";
 import logo from "@/assets/coffee-zone-logo.jpg.asset.json";
 import { supabase } from "@/integrations/supabase/client";
@@ -19,7 +38,14 @@ const nav = [
 
 export function AppSidebar({ isAdmin }: { isAdmin: boolean }) {
   const path = useRouterState({ select: (r) => r.location.pathname });
-  const items = isAdmin ? [...nav, { title: "Users", url: "/users", icon: Users }] : nav;
+  const items = isAdmin
+    ? [
+        ...nav.slice(0, 5),
+        { title: "Reservations", url: "/reservations", icon: ClipboardList },
+        ...nav.slice(5),
+        { title: "Users", url: "/users", icon: Users },
+      ]
+    : nav;
 
   const signOut = async () => {
     await supabase.auth.signOut({ scope: "local" });
@@ -31,9 +57,15 @@ export function AppSidebar({ isAdmin }: { isAdmin: boolean }) {
     <Sidebar collapsible="icon">
       <SidebarHeader className="border-b border-sidebar-border">
         <div className="flex items-center gap-3 px-2 py-3">
-          <img src="/coffeLogo.jpg" alt="Coffee Zone" className="h-10 w-10 rounded-full bg-white object-cover" />
+          <img
+            src="/coffeLogo.jpg"
+            alt="Coffee Zone"
+            className="h-10 w-10 rounded-full bg-white object-cover"
+          />
           <div className="group-data-[collapsible=icon]:hidden">
-            <div className="font-display text-lg font-bold leading-tight text-sidebar-foreground">Coffee Zone</div>
+            <div className="font-display text-lg font-bold leading-tight text-sidebar-foreground">
+              Coffee Zone
+            </div>
             <div className="text-xs text-sidebar-foreground/70">Sales & Inventory</div>
           </div>
         </div>

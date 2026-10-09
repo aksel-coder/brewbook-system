@@ -102,9 +102,9 @@ function SalesPOS() {
     if (cart.length === 0) return;
     setBusy(true);
     try {
-      const items = cart.map(c => ({ product_id: c.product_id, ...(c.variant_id ? { variant_id: c.variant_id } : {}), quantity: c.quantity, unit_price: c.price }));
+      const items = cart.map(c => ({ product_id: c.product_id, ...(c.variant_id ? { variant_id: c.variant_id } : {}), quantity: c.quantity }));
       const res = await createFn({ data: { items } });
-      setReceipt({ ...res, items: cart, ts: new Date() });
+      setReceipt({ ...res, ts: new Date() });
       setCart([]);
       qc.invalidateQueries({ queryKey: ["products"] });
       qc.invalidateQueries({ queryKey: ["dashboard"] });
@@ -206,8 +206,8 @@ function SalesPOS() {
                 <table className="w-full text-xs">
                   <tbody>
                     {receipt.items.map((i: CartItem) => (
-                      <tr key={i.product_id}>
-                        <td>{i.quantity}× {i.name}</td>
+                      <tr key={`${i.product_id}-${i.variant_id ?? "default"}`}>
+                        <td>{i.quantity}× {i.name}{i.variant_name ? ` (${i.variant_name})` : ""}</td>
                         <td className="text-right">{peso(i.price * i.quantity)}</td>
                       </tr>
                     ))}
@@ -215,7 +215,7 @@ function SalesPOS() {
                 </table>
                 <div className="mt-3 space-y-0.5 border-t border-dashed pt-2 text-xs">
                   {/* <div className="flex justify-between"><span>Subtotal</span><span>{peso(receipt.subtotal)}</span></div> */}
-                  <div className="flex justify-between font-bold"><span>TOTAL</span><span>{peso(receipt.subtotal)}</span></div>
+                  <div className="flex justify-between font-bold"><span>TOTAL</span><span>{peso(receipt.total)}</span></div>
                 </div>
                 <div className="mt-3 text-center text-xs">Thank you! ☕</div>
               </div>
@@ -242,15 +242,15 @@ function SalesPOS() {
           <table className="w-full text-xs">
             <tbody>
               {receipt.items.map((i: CartItem) => (
-                <tr key={i.product_id}>
-                  <td>{i.quantity}× {i.name}</td>
+                <tr key={`${i.product_id}-${i.variant_id ?? "default"}`}>
+                  <td>{i.quantity}× {i.name}{i.variant_name ? ` (${i.variant_name})` : ""}</td>
                   <td className="text-right">{peso(i.price * i.quantity)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
           <div className="mt-3 space-y-0.5 border-t border-dashed pt-2 text-xs">
-            <div className="flex justify-between font-bold"><span>TOTAL</span><span>{peso(receipt.subtotal)}</span></div>
+            <div className="flex justify-between font-bold"><span>TOTAL</span><span>{peso(receipt.total)}</span></div>
           </div>
           <div className="mt-3 text-center text-xs">Thank you! ☕</div>
         </div>

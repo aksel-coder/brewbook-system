@@ -321,7 +321,7 @@ export const upsertProduct = createServerFn({ method: "POST" })
       const createdProductId = product.id as string;
       productId = createdProductId;
 
-      if (category?.category_type !== "recipe_based") {
+      if (category?.category_type !== "recipe_based" && initialStock > 0) {
         const { error: movementError } = await supabase.from("inventory_transactions").insert({
           product_id: createdProductId,
           transaction_type: "in",
@@ -411,7 +411,6 @@ const saleSchema = z.object({
     product_id: z.string().uuid(),
     variant_id: z.string().uuid().optional(),
     quantity: z.number().int().min(1),
-    unit_price: z.number().min(0),
   })).min(1).max(100),
   tax_rate: z.number().min(0).max(1).default(0),
 });
@@ -420,187 +419,97 @@ export const createSale = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d) => saleSchema.parse(d))
   .handler(async ({ data, context }) => {
-    const { supabase, userId } = context;
-    const subtotal = data.items.reduce((s, i) => s + i.quantity * i.unit_price, 0);
-    const tax = 0;
-    const total = subtotal;
     const receipt = "CZ-" + Date.now().toString(36).toUpperCase();
+    const { data: checkout, error } = await context.supabase.rpc("process_sale_checkout", {
+      p_user_id: context.userId,
+      p_receipt_number: receipt,
+      p_reservation_id: null,
+      p_items: data.items.map(({ product_id, variant_id, quantity }) => ({
+        product_id,
+        variant_id: variant_id ?? null,
+        quantity,
+      })),
+    });
 
-    const productIds = [...new Set(data.items.map((item) => item.product_id))];
-    const { data: productsData, error: productLookupError } = await (supabase.from("products") as any)
-      .select("id, name, stock_quantity, total_used, category_id, categories(category_type)")
-      .in("id", productIds);
-    if (productLookupError) throw new Error(productLookupError.message);
-
-    const { data: recipesData, error: recipesError } = await supabase
-      .from("product_recipes")
-      .select("product_id, item_id, quantity_required")
-      .in("product_id", productIds);
-    if (recipesError) throw new Error(recipesError.message);
-
-    const variantIds = [...new Set(data.items.flatMap((item) => item.variant_id ? [item.variant_id] : []))];
-    const { data: variantsData, error: variantsError } = variantIds.length > 0
-      ? await supabase.from("product_variants").select("id, product_id, name, recipes").in("id", variantIds)
-      : { data: [], error: null };
-    if (variantsError) throw new Error(variantsError.message);
-
-    const recipeMap = new Map<string, any[]>();
-    for (const recipe of recipesData ?? []) {
-      const current = recipeMap.get(recipe.product_id) ?? [];
-      current.push(recipe);
-      recipeMap.set(recipe.product_id, current);
+    if (error) {
+      console.error("Unable to complete POS checkout:", {
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+      });
+      if (error.code === "P0001" && error.message === "Sale operator is not authorized") {
+        const { data: operatorRoles, error: roleLookupError } = await context.supabase
+          .from("user_roles")
+          .select("role")
+          .eq("user_id", context.userId);
+        console.error("POS operator authorization diagnostic:", {
+          operatorMatchesAuthenticatedUser: true,
+          hasAdminRole: operatorRoles?.some((row) => row.role === "admin") ?? false,
+          hasCashierRole: operatorRoles?.some((row) => row.role === "cashier") ?? false,
+          roleLookupError: roleLookupError?.message,
+        });
+      }
+      if (error.code === "PGRST202") {
+        throw new Error(
+          "Supabase does not currently expose the POS checkout function. Verify that it exists, then refresh the Supabase API schema cache.",
+        );
+      }
+      if (error.message.includes("Insufficient product stock") || error.message.includes("Insufficient ingredient stock")) {
+        throw new Error("Insufficient stock. Refresh the product list and try again.");
+      }
+      if (!import.meta.env.PROD) {
+        throw new Error(
+          `${error.code}: ${error.message}${error.details ? ` (${error.details})` : ""}`,
+        );
+      }
+      throw new Error("The sale could not be completed. Please retry the checkout.");
     }
 
-    const variantMap = new Map((variantsData ?? []).map((variant: any) => [variant.id, variant]));
-    const recipesForItem = (item: { product_id: string; variant_id?: string }) => {
-      if (!item.variant_id) return recipeMap.get(item.product_id) ?? [];
-      const variant = variantMap.get(item.variant_id);
-      if (!variant || variant.product_id !== item.product_id) throw new Error("Selected product variant was not found");
-      return Array.isArray(variant.recipes) ? variant.recipes : [];
+    const result = z.object({
+      sale: z.object({
+        id: z.string().uuid(),
+        receipt_number: z.string(),
+        user_id: z.string().uuid(),
+        subtotal: z.number(),
+        tax: z.number(),
+        total_amount: z.number(),
+        sale_date: z.string(),
+        reservation_id: z.string().uuid().nullable(),
+      }),
+      subtotal: z.number(),
+      tax: z.number(),
+      total: z.number(),
+      items: z.array(
+        z.object({
+          product_id: z.string().uuid(),
+          variant_id: z.string().uuid().nullable(),
+          product_name: z.string(),
+          variant_name: z.string().nullable(),
+          quantity: z.number().int(),
+          unit_price: z.number(),
+          subtotal: z.number(),
+        }),
+      ),
+    }).safeParse(checkout);
+
+    if (!result.success) {
+      console.error("POS checkout returned an invalid response:", result.error);
+      throw new Error("The sale response could not be verified. Contact an administrator before retrying.");
+    }
+
+    return {
+      ...result.data,
+      items: result.data.items.map((item) => ({
+        product_id: item.product_id,
+        variant_id: item.variant_id ?? undefined,
+        name: item.product_name,
+        variant_name: item.variant_name ?? undefined,
+        quantity: item.quantity,
+        price: item.unit_price,
+        stock: item.quantity,
+      })),
     };
-
-    const productMap = new Map<string, any>((productsData ?? []).map((product: any) => [product.id, product]));
-    for (const item of data.items) {
-      const current = productMap.get(item.product_id);
-      if (!current) throw new Error("Product not found");
-      const itemRecipes = recipesForItem(item);
-      const inventoryType = resolveCategoryInventoryType(normalizeCategoryType(current.categories?.category_type), itemRecipes);
-      const hasRecipeFlow = inventoryType === "recipe_based";
-      if (hasRecipeFlow) {
-        const recipes = itemRecipes;
-        if (recipes.length === 0) {
-          throw new Error(`${current.name} is set to recipe-based inventory but has no recipe ingredients`);
-        }
-        for (const recipe of recipes) {
-          const required = Number(recipe.quantity_required ?? recipe.quantity ?? 0) * item.quantity;
-          const recipeItemId = recipe.item_id ?? recipe.ingredient_id;
-          const { data: inventoryRow, error: inventoryReadError } = await supabase
-            .from("inventory_items")
-            .select("id, name, unit, current_stock, total_used")
-            .eq("id", recipeItemId)
-            .single();
-
-          if (inventoryReadError) throw new Error(inventoryReadError.message);
-          if (Number(inventoryRow?.current_stock ?? 0) < required) {
-            throw new Error(`Insufficient ingredient stock for ${inventoryRow?.name ?? "recipe ingredient"}`);
-          }
-        }
-        continue;
-      }
-
-      if (Number(current.stock_quantity ?? 0) < item.quantity) {
-        throw new Error(`${current.name} has insufficient stock`);
-      }
-    }
-
-    const { data: sale, error: se } = await supabase.from("sales").insert({
-      receipt_number: receipt,
-      user_id: userId,
-      subtotal: total,
-      tax: 0,
-      total_amount: total,
-    }).select().single();
-    if (se) throw new Error(se.message);
-
-    const { error: ie } = await supabase.from("sale_items").insert(
-      data.items.map(i => ({ sale_id: sale.id, product_id: i.product_id, quantity: i.quantity, unit_price: i.unit_price }))
-    );
-    if (ie) throw new Error(ie.message);
-
-    const finishedSaleQuantities = new Map<string, number>();
-    for (const item of data.items) {
-      const current = productMap.get(item.product_id);
-      if (!current) continue;
-      const itemRecipes = recipesForItem(item);
-      const inventoryType = resolveCategoryInventoryType(normalizeCategoryType(current.categories?.category_type), itemRecipes);
-      if (inventoryType !== "recipe_based") {
-        finishedSaleQuantities.set(item.product_id, (finishedSaleQuantities.get(item.product_id) ?? 0) + item.quantity);
-      }
-    }
-
-    for (const [productId, quantitySold] of finishedSaleQuantities) {
-      const current = productMap.get(productId);
-      const { data: updated, error: updatedError } = await (supabase.from("products") as any)
-        .select("total_used")
-        .eq("id", productId)
-        .single();
-      if (updatedError) throw new Error(updatedError.message);
-
-      const usedBeforeSale = Number(current?.total_used ?? 0);
-      const usedAfterTrigger = Number(updated?.total_used ?? usedBeforeSale);
-      const missingUsed = quantitySold - Math.max(0, usedAfterTrigger - usedBeforeSale);
-      if (missingUsed > 0) {
-        const { error: usedUpdateError } = await (supabase.from("products") as any)
-          .update({ total_used: usedAfterTrigger + missingUsed })
-          .eq("id", productId);
-        if (usedUpdateError) throw new Error(usedUpdateError.message);
-      }
-    }
-
-    for (const item of data.items) {
-      const current = productMap.get(item.product_id);
-      if (!current) {
-        await supabase.from("sale_items").delete().eq("sale_id", sale.id);
-        await supabase.from("sales").delete().eq("id", sale.id);
-        throw new Error("Product not found");
-      }
-
-      const recipes = recipesForItem(item);
-      const inventoryType = resolveCategoryInventoryType(normalizeCategoryType(current.categories?.category_type), recipes);
-      if (inventoryType === "recipe_based") {
-        if (recipes.length === 0) {
-          await supabase.from("sale_items").delete().eq("sale_id", sale.id);
-          await supabase.from("sales").delete().eq("id", sale.id);
-          throw new Error(`${current.name} is set to recipe-based inventory but has no recipe ingredients`);
-        }
-
-        for (const recipe of recipes) {
-          const required = Number(recipe.quantity_required ?? recipe.quantity ?? 0) * item.quantity;
-          const recipeItemId = recipe.item_id ?? recipe.ingredient_id;
-          const { data: inventoryRow, error: inventoryReadError } = await supabase
-            .from("inventory_items")
-            .select("id, name, unit, current_stock, total_used")
-            .eq("id", recipeItemId)
-            .single();
-
-          if (inventoryReadError) {
-            await supabase.from("sale_items").delete().eq("sale_id", sale.id);
-            await supabase.from("sales").delete().eq("id", sale.id);
-            throw new Error(inventoryReadError.message);
-          }
-
-          const currentStock = Number(inventoryRow?.current_stock ?? 0);
-          const nextStock = currentStock - required;
-          const nextUsed = Number(inventoryRow?.total_used ?? 0) + required;
-          const { error: itemUpdateError } = await supabase
-            .from("inventory_items")
-            .update({ current_stock: nextStock, total_used: nextUsed })
-            .eq("id", recipeItemId);
-
-          if (itemUpdateError) {
-            await supabase.from("sale_items").delete().eq("sale_id", sale.id);
-            await supabase.from("sales").delete().eq("id", sale.id);
-            throw new Error(itemUpdateError.message);
-          }
-
-          const { error: movementError } = await supabase.from("inventory_movements").insert({
-            item_id: recipeItemId,
-            type: "Sale",
-            qty: -required,
-            reference: `${current.name}${item.variant_id ? ` (${variantMap.get(item.variant_id)?.name ?? "variant"})` : ""} x${item.quantity} used ${required}${inventoryRow?.unit ?? ""} ${inventoryRow?.name ?? "ingredient"} [${receipt}]`,
-          });
-
-          if (movementError) {
-            await supabase.from("sale_items").delete().eq("sale_id", sale.id);
-            await supabase.from("sales").delete().eq("id", sale.id);
-            throw new Error(movementError.message);
-          }
-        }
-        continue;
-      }
-    }
-
-    return { sale, items: data.items, subtotal, tax, total };
   });
 
 export const listSales = createServerFn({ method: "GET" })
@@ -612,7 +521,9 @@ export const listSales = createServerFn({ method: "GET" })
     while (true) {
       const { data, error } = await context.supabase
         .from("sales")
-        .select("*, sale_items(id, quantity, unit_price, products(name))")
+        .select(
+          "*, reservation:reservations(reservation_number), sale_items(id, quantity, unit_price, variant_name, products(name))",
+        )
         .order("sale_date", { ascending: false })
         .range(from, from + pageSize - 1);
       if (error) throw new Error(error.message);

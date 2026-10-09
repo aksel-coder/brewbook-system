@@ -74,12 +74,13 @@ export const getMyRole = createServerFn({ method: "GET" })
     await requireAdmin(supabase, userId);
 
     // 2. Fetch directly from Auth via supabaseAdmin, and grab your app roles concurrently
-    const [{ data: authData, error: authError }, { data: roles, error: rolesError }] = await Promise.all([
+    const [
+      { data: authData, error: authError },
+      { data: roles, error: rolesError },
+    ] = await Promise.all([
       supabaseAdmin.auth.admin.listUsers(),
       supabaseAdmin.from("user_roles").select("user_id, role"),
     ]);
-
-    console.log('authData:', authData)
 
     if (authError) throw new Error(authError.message);
     if (rolesError) throw new Error(rolesError.message);
@@ -91,7 +92,6 @@ export const getMyRole = createServerFn({ method: "GET" })
       arr.push(r.role);
       roleMap.set(r.user_id, arr);
     }
-
     // 4. Transform the Auth system users so they match your exact component expectations
     return (authData.users ?? []).map(u => ({
       id: u.id,
@@ -126,8 +126,17 @@ export const createUser = createServerFn({ method: "POST" })
       user_metadata: { full_name: data.full_name },
     });
     if (error) throw new Error(error.message);
-    if (data.role === "admin" && created.user) {
-      await context.supabase.from("user_roles").upsert({ user_id: created.user.id, role: "admin" });
+    if (created.user) {
+      const { error: clearRolesError } = await supabaseAdmin
+        .from("user_roles")
+        .delete()
+        .eq("user_id", created.user.id);
+      if (clearRolesError) throw new Error(clearRolesError.message);
+
+      const { error: roleError } = await supabaseAdmin
+        .from("user_roles")
+        .insert({ user_id: created.user.id, role: data.role });
+      if (roleError) throw new Error(roleError.message);
     }
     return { ok: true };
   });
