@@ -14,8 +14,6 @@ import { usePagination } from "@/hooks/use-pagination";
 import { printTable } from "@/lib/print";
 import { Download, FileText, Printer, X } from "lucide-react";
 import { useMemo, useState } from "react";
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
 
 export const Route = createFileRoute("/_authenticated/reports")({
   head: () => ({ meta: [{ title: "Reports — Coffee Zone" }] }),
@@ -68,7 +66,11 @@ function downloadCSV(filename: string, rows: (string | number)[][]) {
   a.href = URL.createObjectURL(blob); a.download = filename; a.click();
 }
 
-function downloadPDF(title: string, head: string[], body: (string | number)[][]) {
+async function downloadPDF(title: string, head: string[], body: (string | number)[][]) {
+  const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
+    import("jspdf"),
+    import("jspdf-autotable"),
+  ]);
   const doc = new jsPDF();
   doc.setFontSize(16); doc.text("Coffee Zone — " + title, 14, 18);
   doc.setFontSize(10); doc.text(new Date().toLocaleString(), 14, 25);
