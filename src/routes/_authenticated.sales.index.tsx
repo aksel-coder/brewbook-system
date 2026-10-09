@@ -141,7 +141,7 @@ function SalesPOS() {
                 <div className="text-xs text-muted-foreground">{p.categories?.name}</div>
                 <div className="mt-2 flex items-center justify-between">
                   <span className="font-semibold text-primary">{p.inventory_type === "recipe_based" && p.product_variants?.length ? "Choose size" : peso(p.price)}</span>
-                  <Badge variant={p.inventory_type === "recipe_based" ? "secondary" : p.available_stock <= p.low_stock_threshold ? "destructive" : "secondary"}>{p.inventory_type === "recipe_based" ? "Recipe" : p.available_stock}</Badge>
+                  <Badge variant={p.inventory_type === "recipe_based" ? "secondary" : p.available_stock <= p.low_stock_threshold ? "destructive" : "secondary"}>{p.inventory_type === "recipe_based" ? "Ingredient" : p.available_stock}</Badge>
                 </div>
               </button>
             ))}

@@ -17,10 +17,7 @@ const photoTypeByExtension = {
 
 const reservationSchema = z.object({
   customer_name: z.string().trim().min(1).max(120),
-  contact_number: z
-    .string()
-    .trim()
-    .regex(/^[0-9+(). -]{7,20}$/),
+  contact_number: z.string().regex(/^\d{11}$/, "Contact number must be exactly 11 digits."),
   pickup_date: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
@@ -52,7 +49,7 @@ const reservationResultSchema = z.object({
 
 const publicReservationErrors = new Set([
   "Enter a valid customer name",
-  "Enter a valid contact number",
+  "Contact number must be exactly 11 digits.",
   "Pickup date cannot be in the past",
   "Pickup time is required",
   "Invalid customer photo reference",

@@ -7,6 +7,7 @@ import {
   ArrowRight,
   CalendarDays,
   Camera,
+  CheckCircle2,
   Coffee,
   Minus,
   Plus,
@@ -17,6 +18,13 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
@@ -187,10 +195,13 @@ function CustomerPage() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [selectedVariants, setSelectedVariants] = useState<Record<string, string>>({});
   const [selectedQuantities, setSelectedQuantities] = useState<Record<string, string>>({});
+  const [addedProductName, setAddedProductName] = useState<string | null>(null);
   const [reservationOpen, setReservationOpen] = useState(false);
   const [showReservationReview, setShowReservationReview] = useState(false);
   const [fullName, setFullName] = useState("");
   const [contactNumber, setContactNumber] = useState("");
+  const [contactNumberError, setContactNumberError] = useState("");
+  const [contactNumberTouched, setContactNumberTouched] = useState(false);
   const [pickupDate, setPickupDate] = useState("");
   const [pickupTime, setPickupTime] = useState("");
   const [notes, setNotes] = useState("");
@@ -486,6 +497,8 @@ function CustomerPage() {
     if (!Number.isInteger(requested) || requested < 1 || requested + alreadyInCart > available)
       return;
 
+    const variantName = product.variants.find((variant) => variant.id === variantId)?.name;
+    const addedItemName = variantName ? `${product.name} (${variantName})` : product.name;
     const key = `${product.id}:${variantId ?? "default"}`;
     setCart((current) => {
       const existing = current.find((item) => item.key === key);
@@ -500,6 +513,7 @@ function CustomerPage() {
       ];
     });
     setSelectedQuantities((current) => ({ ...current, [product.id]: "1" }));
+    setAddedProductName(addedItemName);
   };
 
   const changeQuantity = (item: CartItem, amount: number) => {
@@ -768,13 +782,39 @@ function CustomerPage() {
                         <Input
                           type="tel"
                           autoComplete="tel"
-                          inputMode="tel"
+                          inputMode="numeric"
                           required
-                          pattern="(?:[0-9]|\+|\(|\)| |\.|-){7,20}"
-                          title="Enter a phone number using 7 to 20 digits or phone punctuation."
+                          maxLength={11}
+                          pattern="[0-9]{11}"
+                          title="Contact number must be exactly 11 digits."
+                          aria-invalid={Boolean(contactNumberError)}
+                          aria-describedby="contact-number-error"
                           value={contactNumber}
-                          onChange={(event) => setContactNumber(event.target.value)}
+                          onBlur={() => {
+                            setContactNumberTouched(true);
+                            setContactNumberError(
+                              /^\d{11}$/.test(contactNumber)
+                                ? ""
+                                : "Contact number must be exactly 11 digits.",
+                            );
+                          }}
+                          onChange={(event) => {
+                            const digits = event.target.value.replace(/\D/g, "").slice(0, 11);
+                            setContactNumber(digits);
+                            if (contactNumberTouched) {
+                              setContactNumberError(
+                                /^\d{11}$/.test(digits)
+                                  ? ""
+                                  : "Contact number must be exactly 11 digits.",
+                              );
+                            }
+                          }}
                         />
+                        {contactNumberError && (
+                          <span id="contact-number-error" role="alert" className="text-destructive">
+                            {contactNumberError}
+                          </span>
+                        )}
                       </label>
                       <label className="space-y-1.5 text-sm">
                         <span className="font-medium">
@@ -1269,6 +1309,44 @@ function CustomerPage() {
           </>
         )}
       </main>
+
+      <Dialog
+        open={addedProductName !== null}
+        onOpenChange={(open) => {
+          if (!open) setAddedProductName(null);
+        }}
+      >
+        <DialogContent className="w-[calc(100%-2rem)] sm:max-w-md">
+          <DialogHeader className="items-center text-center">
+            <CheckCircle2 className="h-12 w-12 text-primary" aria-hidden="true" />
+            <DialogTitle className="font-display text-2xl">Added to Cart!</DialogTitle>
+            <DialogDescription>
+              {addedProductName} has been successfully added to your cart.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-center">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setAddedProductName(null)}
+            >
+              Continue Shopping
+            </Button>
+            <Button
+              type="button"
+              onClick={() => {
+                setAddedProductName(null);
+                document.getElementById("cart")?.scrollIntoView({
+                  behavior: "smooth",
+                  block: "start",
+                });
+              }}
+            >
+              View Cart <ShoppingBag className="h-4 w-4" />
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <footer className="border-t border-border/60 py-6 text-center text-xs text-muted-foreground">
         Coffee Zone · Start your day right
