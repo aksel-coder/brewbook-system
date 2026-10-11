@@ -182,6 +182,7 @@ export const listProducts = createServerFn({ method: "GET" })
         added_stock: Math.max(0, addedStockByProduct.get(product.id) ?? 0),
         inventory_type: targetType,
         available_stock: Math.max(0, availableStock),
+        recipes,
       };
     });
   });
@@ -510,6 +511,36 @@ export const createSale = createServerFn({ method: "POST" })
         stock: item.quantity,
       })),
     };
+  });
+
+export const syncOfflineSale = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => z.object({
+    id: z.string().uuid(),
+    items: z.array(z.object({
+      product_id: z.string().uuid(),
+      variant_id: z.string().uuid().nullable(),
+      quantity: z.number().int().min(1),
+      expected_unit_price: z.number().min(0),
+      expected_recipe: z.array(z.object({
+        item_id: z.string().uuid(),
+        quantity_required: z.number().positive(),
+      })),
+    })).min(1).max(100),
+  }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { data: roles, error: roleError } = await context.supabase
+      .from("user_roles").select("role").eq("user_id", context.userId);
+    if (roleError) throw new Error(roleError.message);
+    if (!(roles ?? []).some(role => role.role === "admin")) {
+      throw new Error("Admin authorization is required to synchronize offline sales.");
+    }
+    const { data: result, error } = await context.supabase.rpc("sync_admin_offline_sale", {
+      p_id: data.id,
+      p_items: data.items,
+    });
+    if (error) throw new Error(error.message);
+    return result;
   });
 
 export const listSales = createServerFn({ method: "GET" })

@@ -6,6 +6,8 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { getMyRole } from "@/lib/api/users.functions";
+import { forgetVerifiedAdmin, hasVerifiedAdmin, rememberVerifiedAdmin, syncPendingOfflineSales } from "@/lib/offline";
+import { syncOfflineSale } from "@/lib/api/coffee.functions";
 
 const adminOnlyPaths = new Set([
   "/dashboard",
@@ -28,9 +30,24 @@ export const Route = createFileRoute("/_authenticated")({
       });
     }
     const pathname = location.pathname.replace(/\/+$/, "") || "/";
+    if (!navigator.onLine) {
+      const verified = await hasVerifiedAdmin(data.session.user.id);
+      if (!verified) {
+        if (adminOnlyPaths.has(pathname)) throw redirect({ to: "/sales", replace: true });
+        return;
+      }
+      if (["/inventory", "/products", "/reservations", "/users"].includes(pathname)) {
+        throw redirect({ to: "/sales", replace: true });
+      }
+      if (adminOnlyPaths.has(pathname)) return;
+    }
     if (adminOnlyPaths.has(pathname)) {
-      const role = await getMyRole();
-      if (!role.isAdmin) throw redirect({ to: "/sales", replace: true });
+      try {
+        const role = await getMyRole();
+        if (!role.isAdmin) throw redirect({ to: "/sales", replace: true });
+      } catch (error) {
+        if (navigator.onLine || !(await hasVerifiedAdmin(data.session.user.id))) throw error;
+      }
     }
   },
   component: AuthLayout,
@@ -42,10 +59,64 @@ function AuthLayout() {
   const fetchRole = useServerFn(getMyRole);
   const { data: me, refetch, isLoading: meLoading, isFetching: meFetching, error: meError } = useQuery({
     queryKey: ["me"],
-    queryFn: () => fetchRole(),
+    queryFn: async () => {
+      try {
+        return await fetchRole();
+      } catch (error) {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (navigator.onLine || !session || !(await hasVerifiedAdmin(session.user.id))) throw error;
+        return {
+          userId: session.user.id,
+          isAdmin: true,
+          role: "admin",
+          fullName: String(session.user.user_metadata?.full_name ?? ""),
+          username: session.user.email?.split("@")[0] ?? "",
+        };
+      }
+    },
     refetchOnWindowFocus: true,
     refetchOnMount: "always",
   });
+  const syncFn = useServerFn(syncOfflineSale);
+
+  useEffect(() => {
+    if (me?.isAdmin) {
+      void rememberVerifiedAdmin(me.userId).catch(error => console.error("Could not save verified admin status:", error));
+    } else if (me && navigator.onLine) {
+      void forgetVerifiedAdmin(me.userId).catch(error => console.error("Could not clear stale admin status:", error));
+    }
+  }, [me]);
+
+  useEffect(() => {
+    const sync = async () => {
+      if (!navigator.onLine) return;
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session || !(await hasVerifiedAdmin(session.user.id))) return;
+      await syncPendingOfflineSales(session.user.id, async sale => {
+        await syncFn({
+          data: {
+            id: sale.id,
+            items: sale.items.map(item => ({
+              product_id: item.product_id,
+              variant_id: item.variant_id ?? null,
+              quantity: item.quantity,
+              expected_unit_price: item.price,
+              expected_recipe: item.expectedRecipe,
+            })),
+          },
+        });
+      });
+      qc.invalidateQueries({ queryKey: ["sales"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+    };
+    void sync();
+    window.addEventListener("online", sync);
+    window.addEventListener("coffee-zone-retry-offline-sync", sync);
+    return () => {
+      window.removeEventListener("online", sync);
+      window.removeEventListener("coffee-zone-retry-offline-sync", sync);
+    };
+  }, [qc, syncFn]);
 
   useEffect(() => {
     console.log("[AuthLayout] session/role state:", {

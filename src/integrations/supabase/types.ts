@@ -519,6 +519,10 @@ export type Database = {
         };
         Returns: Json;
       };
+      sync_admin_offline_sale: {
+        Args: { p_id: string; p_items: Json };
+        Returns: Json;
+      };
       admin_delete_user: {
         Args: { target_user_id: string };
         Returns: undefined;

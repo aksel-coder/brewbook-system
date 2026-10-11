@@ -10,6 +10,8 @@ import { Input } from "@/components/ui/input";
 import { Coins, Package, Boxes, AlertTriangle, TrendingUp } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, CartesianGrid } from "recharts";
 import { useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { asHistorySale, cacheOfflineDashboard, getOfflineDashboard, getOfflineProducts, getOfflineSales, hasVerifiedAdmin } from "@/lib/offline";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   head: () => ({ meta: [{ title: "Dashboard — Coffee Zone" }] }),
@@ -64,12 +66,101 @@ function Dashboard() {
   const [range, setRange] = useState(initialRange);
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["dashboard", range.startDate, range.endDate],
-    queryFn: () => fn({ data: range }),
+    queryFn: async () => {
+      const rangeKey = `${range.startDate}|${range.endDate}`;
+      const { data: { session } } = await supabase.auth.getSession();
+      try {
+        const stats = await fn({ data: range });
+        if (session && await hasVerifiedAdmin(session.user.id)) {
+          await cacheOfflineDashboard(session.user.id, rangeKey, stats);
+          const local = await getOfflineSales(session.user.id);
+          const pending = local.filter(sale => sale.syncStatus !== "synced" &&
+            new Date(sale.sale_date) >= new Date(range.startDate) &&
+            new Date(sale.sale_date) <= new Date(range.endDate));
+          return addPendingSales(stats, pending.map(asHistorySale), await getOfflineProducts(session.user.id));
+        }
+        return stats;
+      } catch (requestError) {
+        if (navigator.onLine || !session || !(await hasVerifiedAdmin(session.user.id))) throw requestError;
+        const cached = await getOfflineDashboard(session.user.id, rangeKey) ?? await offlineDashboardBaseline(session.user.id);
+        if (!cached) throw requestError;
+        const local = await getOfflineSales(session.user.id);
+        const pending = local.filter(sale => sale.syncStatus !== "synced" &&
+          new Date(sale.sale_date) >= new Date(range.startDate) &&
+          new Date(sale.sale_date) <= new Date(range.endDate));
+        return addPendingSales(cached, pending.map(asHistorySale), await getOfflineProducts(session.user.id));
+      }
+    },
     retry: (count, err) => {
       if (count < 2 && err instanceof Error && err.message.toLowerCase().includes("unauthorized")) return true;
       return count < 1;
     },
   });
+
+async function offlineDashboardBaseline(ownerId: string) {
+  const products = await getOfflineProducts(ownerId);
+  if (!products) return undefined;
+  const finished = products.filter((product: any) => product.inventory_type !== "recipe_based");
+  return {
+    totalSales: 0,
+    todaySales: 0,
+    orderCount: 0,
+    todayOrders: 0,
+    totalProducts: products.filter((product: any) => product.is_active).length,
+    totalStock: finished.reduce((sum: number, product: any) => sum + Math.max(0, Number(product.stock_quantity ?? 0)), 0),
+    lowStockCount: 0,
+    lowStockItems: [],
+    recent: [],
+    best: [],
+    salesChart: [],
+  };
+}
+
+function addPendingSales(stats: any, sales: any[], cachedProducts?: any[]) {
+  if (!sales.length) {
+    if (!cachedProducts) return stats;
+    return {
+      ...stats,
+      totalProducts: cachedProducts.filter(product => product.is_active).length,
+      totalStock: cachedProducts.reduce((sum, product) => sum + Math.max(0, Number(product.stock_quantity ?? 0)), 0),
+    };
+  }
+  const totalSales = sales.reduce((sum, sale) => sum + Number(sale.total_amount), 0);
+  const best = new Map<string, { name: string; qty: number; price: number }>(
+    (stats.best ?? []).map((item: any) => [item.name, { ...item }]),
+  );
+  for (const sale of sales) {
+    for (const item of sale.sale_items ?? []) {
+      const name = item.products?.name ?? "Unknown";
+      const current = best.get(name) ?? { name, qty: 0, price: Number(item.unit_price ?? 0) };
+      current.qty += Number(item.quantity ?? 0);
+      best.set(name, current);
+    }
+  }
+  const chart = new Map<string, number>((stats.salesChart ?? []).map((entry: any) => [entry.date, Number(entry.total)]));
+  for (const sale of sales) {
+    const date = new Date(sale.sale_date).toISOString().slice(5, 10);
+    chart.set(date, (chart.get(date) ?? 0) + Number(sale.total_amount));
+  }
+  return {
+    ...stats,
+    ...(cachedProducts ? {
+      totalProducts: cachedProducts.filter(product => product.is_active).length,
+      totalStock: cachedProducts.reduce((sum, product) => sum + Math.max(0, Number(product.stock_quantity ?? 0)), 0),
+    } : {}),
+    totalSales: Number(stats.totalSales ?? 0) + totalSales,
+    todaySales: Number(stats.todaySales ?? 0) + sales
+      .filter(sale => new Date(sale.sale_date).toDateString() === new Date().toDateString())
+      .reduce((sum, sale) => sum + Number(sale.total_amount), 0),
+    orderCount: Number(stats.orderCount ?? 0) + sales.length,
+    todayOrders: Number(stats.todayOrders ?? 0) + sales
+      .filter(sale => new Date(sale.sale_date).toDateString() === new Date().toDateString()).length,
+    recent: [...sales, ...(stats.recent ?? [])].sort((a, b) =>
+      new Date(b.sale_date).getTime() - new Date(a.sale_date).getTime()).slice(0, 5),
+    best: Array.from(best.values()).sort((a: any, b: any) => b.qty - a.qty).slice(0, 5),
+    salesChart: Array.from(chart.entries()).map(([date, total]) => ({ date, total })),
+  };
+}
 
   const dashboardData = data ?? {
     totalSales: 0,
@@ -196,6 +287,7 @@ function Dashboard() {
                     <div>
                       <div className="font-medium">{s?.receipt_number ?? "—"}</div>
                       <div className="text-xs text-muted-foreground">{s?.sale_date ? new Date(s.sale_date).toLocaleString() : "No date"}</div>
+                      {s?.offline_status && s.offline_status !== "Synced" && <Badge variant="secondary" className="mt-1">{s.offline_status}</Badge>}
                     </div>
                     <div className="font-semibold text-primary">{peso(Number(s?.total_amount ?? 0))}</div>
                   </li>

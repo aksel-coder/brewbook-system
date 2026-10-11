@@ -4,6 +4,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { listSales, listProducts, listInventoryItems, listAllProductRecipes } from "@/lib/api/coffee.functions";
 import { getLowStockInventory } from "@/lib/api/low-stock";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,6 +15,8 @@ import { usePagination } from "@/hooks/use-pagination";
 import { printTable } from "@/lib/print";
 import { Download, FileText, Printer, X } from "lucide-react";
 import { useMemo, useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { asHistorySale, cacheOnlineSales, getCachedOnlineSales, getOfflineInventory, getOfflineProducts, getOfflineSales, hasVerifiedAdmin } from "@/lib/offline";
 
 export const Route = createFileRoute("/_authenticated/reports")({
   head: () => ({ meta: [{ title: "Reports — Coffee Zone" }] }),
@@ -131,10 +134,63 @@ function Reports() {
   const prodFn = useServerFn(listProducts);
   const inventoryFn = useServerFn(listInventoryItems);
   const recipesFn = useServerFn(listAllProductRecipes);
-  const { data: sales = [] } = useQuery({ queryKey: ["sales"], queryFn: () => salesFn() });
-  const { data: products = [] } = useQuery({ queryKey: ["products"], queryFn: () => prodFn() });
-  const { data: inventoryItems = [] } = useQuery({ queryKey: ["inventoryItems"], queryFn: () => inventoryFn() });
-  const { data: recipes = [] } = useQuery({ queryKey: ["allProductRecipes"], queryFn: () => recipesFn() });
+  const { data: sales = [] } = useQuery({
+    queryKey: ["sales"],
+    queryFn: async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      try {
+        const onlineSales = await salesFn();
+        if (!session || !(await hasVerifiedAdmin(session.user.id))) return onlineSales;
+        await cacheOnlineSales(session.user.id, onlineSales);
+        const local = (await getOfflineSales(session.user.id))
+          .filter(sale => sale.syncStatus !== "synced")
+          .map(asHistorySale);
+        return [...local, ...onlineSales];
+      } catch (error) {
+        if (navigator.onLine || !session || !(await hasVerifiedAdmin(session.user.id))) throw error;
+        const cachedSales = (await getCachedOnlineSales(session.user.id)) ?? [];
+        const local = (await getOfflineSales(session.user.id)).map(asHistorySale);
+        const receipts = new Set(local.map(sale => sale.receipt_number));
+        return [...local, ...cachedSales.filter((sale: any) => !receipts.has(sale.receipt_number))];
+      }
+    },
+  });
+  const { data: products = [] } = useQuery({
+    queryKey: ["products"],
+    queryFn: async () => {
+      try { return await prodFn(); }
+      catch (error) {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (navigator.onLine || !session || !(await hasVerifiedAdmin(session.user.id))) throw error;
+        return (await getOfflineProducts(session.user.id)) ?? [];
+      }
+    },
+  });
+  const { data: inventoryItems = [] } = useQuery({
+    queryKey: ["inventoryItems"],
+    queryFn: async () => {
+      try { return await inventoryFn(); }
+      catch (error) {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (navigator.onLine || !session || !(await hasVerifiedAdmin(session.user.id))) throw error;
+        return (await getOfflineInventory(session.user.id)) ?? [];
+      }
+    },
+  });
+  const { data: recipes = [] } = useQuery({
+    queryKey: ["allProductRecipes"],
+    queryFn: async () => {
+      try { return await recipesFn(); }
+      catch (error) {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (navigator.onLine || !session || !(await hasVerifiedAdmin(session.user.id))) throw error;
+        const cachedProducts = await getOfflineProducts(session.user.id);
+        return (cachedProducts ?? []).flatMap((product: any) =>
+          (product.recipes ?? []).map((recipe: any) => ({ ...recipe, product_id: product.id })),
+        );
+      }
+    },
+  });
 
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -257,7 +313,10 @@ function Reports() {
             getKey={s => s.id}
             renderRow={s => (
               <>
-                <TableCell className="font-mono text-xs">{s.receipt_number}</TableCell>
+                <TableCell className="space-y-1 font-mono text-xs">
+                  <div>{s.receipt_number}</div>
+                  {s.offline_status && s.offline_status !== "Synced" && <Badge variant="secondary">{s.offline_status}</Badge>}
+                </TableCell>
                 <TableCell>{new Date(s.sale_date).toLocaleString()}</TableCell>
                 <TableCell className="text-right font-semibold">{peso(s.total_amount)}</TableCell>
               </>

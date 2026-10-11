@@ -1,0 +1,17 @@
+{
+  "name": "Coffee Zone Sales & Inventory",
+  "short_name": "Coffee Zone",
+  "start_url": "/sales",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#6f4e37",
+  "icons": [
+    {
+      "src": "/coffee-zone-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

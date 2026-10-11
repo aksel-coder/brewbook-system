@@ -50,8 +50,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { title: "Coffee Zone — Sales & Inventory" },
       { name: "description", content: "Coffee Zone Sales and Inventory Management System." },
+      { name: "theme-color", content: "#6f4e37" },
     ],
     links: [
+      { rel: "manifest", href: "/manifest.webmanifest" },
       { rel: "stylesheet", href: appCss },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
@@ -96,6 +98,11 @@ function RootComponent() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/service-worker.js").catch(error => {
+        console.error("Service worker registration failed:", error);
+      });
+    }
     try {
       ["coffee-zone-cart", "coffee-zone-selected-products", "pos-cart", "selectedProducts"].forEach((key) => {
         window.localStorage.removeItem(key);

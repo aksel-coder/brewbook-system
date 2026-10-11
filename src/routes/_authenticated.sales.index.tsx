@@ -1,7 +1,18 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { listProducts, createSale } from "@/lib/api/coffee.functions";
+import { listProducts, listInventoryItems, createSale } from "@/lib/api/coffee.functions";
+import { getMyRole } from "@/lib/api/users.functions";
+import {
+  cacheOfflineProducts,
+  commitOfflineSale,
+  forgetVerifiedAdmin,
+  getOfflineInventory,
+  getOfflineProducts,
+  hasVerifiedAdmin,
+  rememberVerifiedAdmin,
+  type OfflineSale,
+} from "@/lib/offline";
 import { useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -50,12 +61,34 @@ const clearPersistedPosState = () => {
 
 function SalesPOS() {
   const fn = useServerFn(listProducts);
+  const inventoryFn = useServerFn(listInventoryItems);
   const createFn = useServerFn(createSale);
+  const roleFn = useServerFn(getMyRole);
   const qc = useQueryClient();
+  const [ownerId, setOwnerId] = useState("");
+  const [offlineEligible, setOfflineEligible] = useState(false);
+  const [isOnline, setIsOnline] = useState(typeof navigator === "undefined" || navigator.onLine);
   const { data: products = [] } = useQuery({
     queryKey: ["products"],
-    queryFn: () => fn(),
+    queryFn: async () => {
+      if (!navigator.onLine) {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session || !(await hasVerifiedAdmin(session.user.id))) {
+          throw new Error("Offline POS is available only to an Admin who previously signed in online.");
+        }
+        const cached = await getOfflineProducts(session.user.id);
+        if (!cached) throw new Error("No cached products. Connect to the internet and open POS before going offline.");
+        return cached;
+      }
+      const rows = await fn();
+      const inventory = await inventoryFn();
+      if (ownerId && await hasVerifiedAdmin(ownerId)) {
+        await cacheOfflineProducts(ownerId, rows, inventory);
+      }
+      return rows;
+    },
   });
+  const [inventory, setInventory] = useState<any[]>([]);
   const [search, setSearch] = useState("");
   const [cart, setCart] = useState<CartItem[]>([]);
   const [receipt, setReceipt] = useState<any>(null);
@@ -64,7 +97,40 @@ function SalesPOS() {
 
   useEffect(() => {
     clearPersistedPosState();
-  }, []);
+    const updateNetwork = () => setIsOnline(navigator.onLine);
+    window.addEventListener("online", updateNetwork);
+    window.addEventListener("offline", updateNetwork);
+    void supabase.auth.getSession().then(async ({ data: { session } }) => {
+      const id = session?.user.id ?? "";
+      setOwnerId(id);
+      if (!id) return;
+      setOfflineEligible(await hasVerifiedAdmin(id));
+      const cachedInventory = await getOfflineInventory(id);
+      if (cachedInventory) setInventory(cachedInventory);
+      if (navigator.onLine) {
+        try {
+          const role = await roleFn();
+          if (!role.isAdmin) {
+            await forgetVerifiedAdmin(id);
+            setOfflineEligible(false);
+            return;
+          }
+          await rememberVerifiedAdmin(id);
+          setOfflineEligible(true);
+          const rows = await fn();
+          const freshInventory = await inventoryFn();
+          setInventory(freshInventory);
+          await cacheOfflineProducts(id, rows, freshInventory);
+        } catch (error) {
+          console.error("Could not refresh the offline POS catalog:", error);
+        }
+      }
+    });
+    return () => {
+      window.removeEventListener("online", updateNetwork);
+      window.removeEventListener("offline", updateNetwork);
+    };
+  }, [fn, inventoryFn, roleFn]);
 
   const safeProducts = Array.isArray(products) ? products.filter(Boolean) : [];
   const filtered = useMemo(() =>
@@ -102,6 +168,10 @@ function SalesPOS() {
     if (cart.length === 0) return;
     setBusy(true);
     try {
+      if (!isOnline) {
+        await finishOfflineCheckout();
+        return;
+      }
       const items = cart.map(c => ({ product_id: c.product_id, ...(c.variant_id ? { variant_id: c.variant_id } : {}), quantity: c.quantity }));
       const res = await createFn({ data: { items } });
       setReceipt({ ...res, ts: new Date() });
@@ -113,12 +183,134 @@ function SalesPOS() {
       qc.invalidateQueries({ queryKey: ["inventoryItems"] });
       qc.invalidateQueries({ queryKey: ["inventoryMovements"] });
       toast.success(`Sale recorded · ${res.sale.receipt_number}`);
-    } catch (e: any) { toast.error(e.message); }
+    } catch (e: any) {
+      if (!navigator.onLine) {
+        try {
+          await finishOfflineCheckout();
+        } catch (offlineError) {
+          toast.error(offlineError instanceof Error ? offlineError.message : String(offlineError));
+        }
+      } else {
+        toast.error(e.message);
+      }
+    }
     finally { setBusy(false); }
+  };
+
+  const finishOfflineCheckout = async () => {
+    if (!ownerId || !(await hasVerifiedAdmin(ownerId))) {
+      throw new Error("Offline checkout is restricted to an Admin previously verified online.");
+    }
+    const savedInventory = await getOfflineInventory(ownerId);
+    const savedProducts = await getOfflineProducts(ownerId);
+    if (!savedInventory || !savedProducts) throw new Error("Cached POS data is missing. Reconnect and refresh POS.");
+    const nextInventory = savedInventory.map(row => ({ ...row }));
+    const nextProducts = savedProducts.map(row => ({ ...row }));
+    const inventoryById = new Map(nextInventory.map(row => [row.id, row]));
+    const productsById = new Map(nextProducts.map(row => [row.id, row]));
+    const ingredientDemand = new Map<string, number>();
+    const finishedDemand = new Map<string, number>();
+
+    for (const item of cart) {
+      const product = productsById.get(item.product_id);
+      if (!product) throw new Error(`Product ${item.name} is no longer in the cached catalog.`);
+      if (product.inventory_type !== "recipe_based") {
+        finishedDemand.set(item.product_id, (finishedDemand.get(item.product_id) ?? 0) + item.quantity);
+        continue;
+      }
+      const variant = (product.product_variants ?? []).find((entry: any) => entry.id === item.variant_id);
+      const recipes = item.variant_id ? variant?.recipes : product.recipes;
+      if (!Array.isArray(recipes) || recipes.length === 0) {
+        throw new Error(`${item.name} has no cached recipe; offline checkout is unavailable.`);
+      }
+      for (const recipe of recipes) {
+        const itemId = recipe.item_id ?? recipe.ingredient_id;
+        const amount = Number(recipe.quantity_required ?? recipe.quantity) * item.quantity;
+        if (!itemId || !Number.isFinite(amount) || amount <= 0 || !inventoryById.has(itemId)) {
+          throw new Error(`${item.name} has incomplete cached recipe data.`);
+        }
+        ingredientDemand.set(itemId, (ingredientDemand.get(itemId) ?? 0) + amount);
+      }
+    }
+    for (const [productId, amount] of finishedDemand) {
+      const product = productsById.get(productId);
+      if (Number(product.stock_quantity ?? 0) < amount) throw new Error(`Insufficient cached stock for ${product.name}.`);
+      product.stock_quantity = Number(product.stock_quantity ?? 0) - amount;
+      product.available_stock = product.stock_quantity;
+    }
+    for (const [itemId, amount] of ingredientDemand) {
+      const ingredient = inventoryById.get(itemId)!;
+      if (Number(ingredient.current_stock ?? 0) < amount) {
+        throw new Error(`Insufficient cached ingredient stock for ${ingredient.name}.`);
+      }
+      ingredient.current_stock = Number(ingredient.current_stock) - amount;
+      ingredient.total_used = Number(ingredient.total_used ?? 0) + amount;
+    }
+    for (const product of nextProducts) {
+      if (product.inventory_type !== "recipe_based") continue;
+      const variants = product.product_variants ?? [];
+      product.available_stock = variants.length
+        ? Math.max(0, Math.min(...variants.flatMap((variant: any) => (variant.recipes ?? []).map((recipe: any) => {
+            const stock = Number(inventoryById.get(recipe.item_id ?? recipe.ingredient_id)?.current_stock ?? 0);
+            const required = Number(recipe.quantity_required ?? recipe.quantity);
+            return required > 0 ? Math.floor(stock / required) : 0;
+          }))))
+        : Math.max(0, Math.min(...(product.recipes ?? []).map((recipe: any) => {
+            const stock = Number(inventoryById.get(recipe.item_id)?.current_stock ?? 0);
+            return Math.floor(stock / Number(recipe.quantity_required));
+          })));
+    }
+
+    const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+    const id = crypto.randomUUID();
+    const receipt_number = `CZ-OFF-${id.replace(/-/g, "").toUpperCase()}`;
+    const sale: OfflineSale = {
+      id,
+      ownerId,
+      receipt_number,
+      sale_date: new Date().toISOString(),
+      subtotal,
+      tax: 0,
+      total_amount: subtotal,
+      items: cart.map(({ product_id, variant_id, name, variant_name, price, quantity }) => {
+        const product = productsById.get(product_id);
+        const variant = product?.product_variants?.find((entry: any) => entry.id === variant_id);
+        const sourceRecipe = variant_id ? variant?.recipes : product?.recipes;
+        const expectedRecipe = Array.isArray(sourceRecipe)
+          ? sourceRecipe.map((recipe: any) => ({
+              item_id: recipe.item_id ?? recipe.ingredient_id,
+              quantity_required: Number(recipe.quantity_required ?? recipe.quantity),
+            })).sort((a: any, b: any) => a.item_id.localeCompare(b.item_id))
+          : [];
+        return { product_id, variant_id, name, variant_name, price, quantity, expectedRecipe };
+      }),
+      syncStatus: "pending",
+    };
+    await commitOfflineSale(sale, nextProducts, nextInventory);
+    setInventory(nextInventory);
+    setCart([]);
+    setReceipt({
+      sale: { id, receipt_number, subtotal, tax: 0, total_amount: subtotal },
+      items: cart.map(item => ({ ...item })),
+      subtotal,
+      tax: 0,
+      total: subtotal,
+      ts: new Date(sale.sale_date),
+      offline: true,
+    });
+    qc.invalidateQueries({ queryKey: ["products"] });
+    qc.invalidateQueries({ queryKey: ["sales"] });
+    qc.invalidateQueries({ queryKey: ["dashboard"] });
+    toast.success(`Sale saved offline · ${receipt_number} · Pending Sync`);
   };
 
   return (
     <div className="space-y-4">
+      {!isOnline && !offlineEligible ? (
+        <div className="rounded-md border border-destructive/50 bg-destructive/5 p-6 text-sm text-destructive">
+          Offline POS is available only to an Admin who previously signed in online on this device.
+        </div>
+      ) : <>{!isOnline && <div className="rounded-md border border-amber-500/50 bg-amber-500/10 px-4 py-2 text-sm font-medium text-amber-800">Offline Admin POS · Sales are stored on this device and marked Pending Sync.</div>}
       <div className="flex items-end justify-between gap-2">
         <div>
           <h1 className="font-display text-3xl font-bold">Point of Sale</h1>
@@ -202,6 +394,7 @@ function SalesPOS() {
                 <div className="my-3 border-y border-dashed py-2 text-center text-xs">
                   <div>{receipt.sale.receipt_number}</div>
                   <div>{new Date(receipt.ts).toLocaleString()}</div>
+                  {receipt.offline && <div className="font-semibold text-amber-700">Pending Sync</div>}
                 </div>
                 <table className="w-full text-xs">
                   <tbody>
@@ -238,6 +431,7 @@ function SalesPOS() {
           <div className="my-3 border-y border-dashed py-2 text-center text-xs">
             <div>{receipt.sale.receipt_number}</div>
             <div>{new Date(receipt.ts).toLocaleString()}</div>
+            {receipt.offline && <div className="font-semibold text-amber-700">Pending Sync</div>}
           </div>
           <table className="w-full text-xs">
             <tbody>
@@ -255,6 +449,7 @@ function SalesPOS() {
           <div className="mt-3 text-center text-xs">Thank you! ☕</div>
         </div>
       )}
+      </>}
     </div>
   );
 }

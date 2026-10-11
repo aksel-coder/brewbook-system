@@ -12,6 +12,8 @@ import { usePagination } from "@/hooks/use-pagination";
 import { printTable } from "@/lib/print";
 import { Printer } from "lucide-react";
 import { useState, useMemo } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { asHistorySale, cacheOnlineSales, getCachedOnlineSales, getOfflineSales, hasVerifiedAdmin, retryOfflineSale } from "@/lib/offline";
 
 export const Route = createFileRoute("/_authenticated/sales/history")({
   head: () => ({ meta: [{ title: "Sales History — Coffee Zone" }] }),
@@ -22,7 +24,26 @@ const peso = (n: number) => "₱" + Number(n).toLocaleString("en-PH", { minimumF
 
 function History() {
   const fn = useServerFn(listSales);
-  const { data = [], isLoading } = useQuery({ queryKey: ["sales"], queryFn: () => fn() });
+  const { data = [], isLoading } = useQuery({
+    queryKey: ["sales"],
+    queryFn: async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      try {
+        const onlineSales = await fn();
+        if (!session || !(await hasVerifiedAdmin(session.user.id))) return onlineSales;
+        await cacheOnlineSales(session.user.id, onlineSales);
+        const local = await getOfflineSales(session.user.id);
+        const localSales = local.map(asHistorySale).filter(sale => sale.offline_status !== "Synced");
+        return [...localSales, ...onlineSales];
+      } catch (error) {
+        if (navigator.onLine || !session || !(await hasVerifiedAdmin(session.user.id))) throw error;
+        const cachedSales = (await getCachedOnlineSales(session.user.id)) ?? [];
+        const local = (await getOfflineSales(session.user.id)).map(asHistorySale);
+        const receipts = new Set(local.map(sale => sale.receipt_number));
+        return [...local, ...cachedSales.filter((sale: any) => !receipts.has(sale.receipt_number))];
+      }
+    },
+  });
   const [q, setQ] = useState("");
   const safeSales = Array.isArray(data) ? data.filter(Boolean) : [];
   const filtered = useMemo(
@@ -84,6 +105,23 @@ function History() {
                         <Badge variant="outline" className="font-sans font-normal">
                           Reservation {s.reservation.reservation_number}
                         </Badge>
+                      )}
+                      {s.offline_status && s.offline_status !== "Synced" && (
+                        <div className="flex items-center gap-2">
+                          <Badge variant="secondary" className="font-sans font-normal">{s.offline_status}</Badge>
+                          {s.offline_status === "Sync issue" && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={async () => {
+                                await retryOfflineSale(s.id);
+                                window.dispatchEvent(new Event("coffee-zone-retry-offline-sync"));
+                              }}
+                            >
+                              Retry Sync
+                            </Button>
+                          )}
+                        </div>
                       )}
                     </TableCell>
                     <TableCell>{new Date(s.sale_date).toLocaleString()}</TableCell>
