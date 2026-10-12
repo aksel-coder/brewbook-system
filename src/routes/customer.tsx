@@ -8,8 +8,11 @@ import {
   CalendarDays,
   Camera,
   CheckCircle2,
+  Clock3,
   Coffee,
+  MapPin,
   Minus,
+  Phone,
   Plus,
   RotateCcw,
   ShoppingBag,
@@ -967,23 +970,76 @@ function CustomerPage() {
           </section>
         ) : (
           <>
-            <section className="relative my-6 overflow-hidden rounded-2xl bg-secondary/50 px-5 py-10 sm:my-8 sm:px-10 sm:py-14">
-              <div className="absolute -right-8 -top-16 h-64 w-64 rounded-full bg-primary/10 blur-3xl" />
-              <div className="relative max-w-2xl">
-                <p className="flex items-center gap-2 text-sm font-medium text-primary">
-                  <Coffee className="h-4 w-4" /> Start your day right
-                </p>
-                <h1 className="mt-3 font-display text-4xl font-bold tracking-tight sm:text-5xl">
-                  Your Coffee Zone favorites, all in one place.
-                </h1>
-                <p className="mt-4 max-w-xl text-muted-foreground">
-                  Browse our menu, explore drink sizes, and add something good to your cart.
-                </p>
-                <Button asChild className="mt-6">
-                  <a href="#menu">
-                    Explore the menu <ArrowRight className="h-4 w-4" />
-                  </a>
-                </Button>
+            <section className="relative my-6 overflow-hidden rounded-2xl bg-secondary/50 sm:my-8">
+              <div className="absolute -left-12 -top-20 h-64 w-64 rounded-full bg-primary/10 blur-3xl" />
+              <div className="relative grid items-center gap-8 p-5 sm:gap-10 sm:p-8 md:p-10 lg:grid-cols-[minmax(0,1.05fr)_minmax(20rem,0.95fr)] lg:gap-8 lg:p-10">
+                <div className="min-w-0">
+                  <p className="flex items-center gap-2 text-sm font-medium text-primary">
+                    <Coffee className="h-4 w-4" aria-hidden="true" /> Start your day right
+                  </p>
+                  <h1 className="mt-3 max-w-2xl font-display text-4xl font-bold tracking-tight sm:text-5xl">
+                    Your Coffee Zone favorites, all in one place.
+                  </h1>
+                  <p className="mt-4 max-w-xl text-muted-foreground">
+                    Browse our menu, explore drink sizes, and add something good to your cart.
+                  </p>
+                  <Button asChild className="mt-6">
+                    <a href="#menu">
+                      Explore the menu <ArrowRight className="h-4 w-4" />
+                    </a>
+                  </Button>
+
+                  <div className="mt-8 grid gap-4 border-t border-primary/10 pt-5 sm:grid-cols-2">
+                    <div className="flex min-w-0 items-start gap-3">
+                      <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-primary">
+                          Location
+                        </p>
+                        <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+                          Barangay Poblacion, Pitogo, Zamboanga del Sur
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex min-w-0 items-start gap-3">
+                      <Clock3 className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-primary">
+                          Opening Hours
+                        </p>
+                        <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+                          9:00 AM – 11:00 PM
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex min-w-0 items-start gap-3 sm:col-span-2">
+                      <Phone className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-primary">
+                          Admin Contact
+                        </p>
+                        <a
+                          className="mt-1 inline-block text-sm text-muted-foreground transition-colors hover:text-primary"
+                          href="tel:09091869853"
+                        >
+                          0909 186 9853
+                        </a>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="relative isolate min-w-0 overflow-hidden rounded-xl bg-primary/10 shadow-sm">
+                  <img
+                    src="/coffee-zone-shop.jpg"
+                    alt="Coffee Zone shop"
+                    className="h-64 w-full object-cover sm:h-80 lg:h-104"
+                  />
+                  <div
+                    className="pointer-events-none absolute inset-0 bg-linear-to-t from-secondary/30 via-transparent to-transparent lg:bg-linear-to-r lg:from-secondary/50 lg:via-secondary/10 lg:to-transparent"
+                    aria-hidden="true"
+                  />
+                </div>
               </div>
             </section>
 
@@ -1033,7 +1089,7 @@ function CustomerPage() {
                       The menu could not be loaded right now.
                     </p>
                     {error instanceof Error && (
-                      <p className="mt-2 break-words text-xs text-destructive">{error.message}</p>
+                      <p className="mt-2 wrap-break-word text-xs text-destructive">{error.message}</p>
                     )}
                     <Button
                       type="button"
