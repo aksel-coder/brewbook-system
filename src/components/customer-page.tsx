@@ -34,6 +34,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { CustomerReviews } from "@/components/customer-reviews";
 import { supabase } from "@/integrations/supabase/client";
 import { listCustomerCatalog, type CustomerCatalogProduct } from "@/lib/api/customer.functions";
 import {
@@ -109,7 +110,20 @@ const CUSTOMER_PHOTO_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const MAX_PAYMENT_SCREENSHOT_BYTES = 5 * 1024 * 1024;
 const PAYMENT_SCREENSHOT_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const CAMERA_UNAVAILABLE_MESSAGE =
-  "Camera unavailable. Please enable camera access or use a device with a working camera.";
+  "Camera is unavailable. Check that your device has a working camera and allow this site to use it.";
+
+function getCameraAccessError(error: unknown) {
+  if (error instanceof Error && ["NotAllowedError", "SecurityError"].includes(error.name)) {
+    return "Camera access was denied. Allow camera access for this site in your browser settings, then try again.";
+  }
+  if (error instanceof Error && ["NotFoundError", "DevicesNotFoundError"].includes(error.name)) {
+    return "No camera was found. Connect or enable a camera, then try again.";
+  }
+  if (error instanceof Error && ["NotReadableError", "TrackStartError"].includes(error.name)) {
+    return "The camera is unavailable or being used by another app. Close other camera apps and try again.";
+  }
+  return CAMERA_UNAVAILABLE_MESSAGE;
+}
 
 type CustomerReservationReceipt = {
   id: string;
@@ -211,7 +225,9 @@ export function CustomerPage() {
   const [addedProductName, setAddedProductName] = useState<string | null>(null);
   const [reservationOpen, setReservationOpen] = useState(false);
   const [showReservationReview, setShowReservationReview] = useState(false);
-  const [fullName, setFullName] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [nameError, setNameError] = useState("");
   const [contactNumber, setContactNumber] = useState("");
   const [contactNumberError, setContactNumberError] = useState("");
   const [contactNumberTouched, setContactNumberTouched] = useState(false);
@@ -238,6 +254,8 @@ export function CustomerPage() {
   );
   const cameraVideoRef = useRef<HTMLVideoElement>(null);
   const cameraStartButtonRef = useRef<HTMLButtonElement>(null);
+  const firstNameInputRef = useRef<HTMLInputElement>(null);
+  const lastNameInputRef = useRef<HTMLInputElement>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
   const cameraRequestRef = useRef(0);
   const isSubmittingReservationRef = useRef(false);
@@ -321,9 +339,9 @@ export function CustomerPage() {
       }
       cameraStreamRef.current = stream;
       setIsCameraOpen(true);
-    } catch {
+    } catch (error) {
       if (requestId === cameraRequestRef.current) {
-        setCameraError(CAMERA_UNAVAILABLE_MESSAGE);
+        setCameraError(getCameraAccessError(error));
       }
     } finally {
       if (requestId === cameraRequestRef.current) setIsStartingCamera(false);
@@ -351,7 +369,7 @@ export function CustomerPage() {
           setPhotoError("The photo could not be captured. Please try again.");
           return;
         }
-        const photo = new File([blob], "customer-selfie.jpg", { type: "image/jpeg" });
+        const photo = new File([blob], "customer-photo.jpg", { type: "image/jpeg" });
         closeCamera();
         handleCustomerPhoto(photo);
       },
@@ -397,6 +415,19 @@ export function CustomerPage() {
   const continueToReservationReview = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!event.currentTarget.reportValidity()) return;
+    const normalizedFirstName = firstName.trim();
+    const normalizedLastName = lastName.trim();
+    if (!normalizedFirstName || !normalizedLastName) {
+      setNameError("Enter both a first name and a last name.");
+      (normalizedFirstName ? lastNameInputRef : firstNameInputRef).current?.focus();
+      return;
+    }
+    if (`${normalizedFirstName} ${normalizedLastName}`.length > 120) {
+      setNameError("First and last name must be 120 characters or fewer combined.");
+      lastNameInputRef.current?.focus();
+      return;
+    }
+    setNameError("");
     if (!customerPhoto) {
       setPhotoError("Take a customer photo before continuing.");
       cameraStartButtonRef.current?.focus();
@@ -492,7 +523,7 @@ export function CustomerPage() {
 
       const reservation = await createReservationFn({
         data: {
-          customer_name: fullName,
+          customer_name: `${firstName.trim()} ${lastName.trim()}`,
           contact_number: contactNumber,
           pickup_date: pickupDate,
           pickup_time: pickupTime,
@@ -526,7 +557,9 @@ export function CustomerPage() {
       setCustomerPhoto(null);
       setPaymentScreenshot(null);
       closeCamera();
-      setFullName("");
+      setFirstName("");
+      setLastName("");
+      setNameError("");
       setContactNumber("");
       setPickupDate("");
       setPickupTime("");
@@ -808,8 +841,12 @@ export function CustomerPage() {
                   <CardContent className="space-y-4">
                     <dl className="grid gap-3 text-sm sm:grid-cols-2">
                       <div>
-                        <dt className="text-muted-foreground">Full name</dt>
-                        <dd className="font-medium">{fullName}</dd>
+                        <dt className="text-muted-foreground">First name</dt>
+                        <dd className="font-medium">{firstName.trim()}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-muted-foreground">Last name</dt>
+                        <dd className="font-medium">{lastName.trim()}</dd>
                       </div>
                       <div>
                         <dt className="text-muted-foreground">Contact number</dt>
@@ -836,10 +873,10 @@ export function CustomerPage() {
                         <div className="flex items-center gap-3">
                           <img
                             src={customerPhotoUrl}
-                            alt="Captured customer selfie preview"
+                            alt="Captured customer photo preview"
                             className="h-20 w-20 rounded-lg border object-cover"
                           />
-                          <span className="text-sm font-medium">Selfie captured</span>
+                          <span className="text-sm font-medium">Photo captured</span>
                         </div>
                       </div>
                     )}
@@ -1067,16 +1104,41 @@ export function CustomerPage() {
                     <div className="grid gap-4 sm:grid-cols-2">
                       <label className="space-y-1.5 text-sm">
                         <span className="font-medium">
-                          Full Name <span className="text-destructive">*</span>
+                          First Name <span className="text-destructive">*</span>
                         </span>
                         <Input
-                          autoComplete="name"
+                          ref={firstNameInputRef}
+                          autoComplete="given-name"
                           required
                           maxLength={120}
-                          value={fullName}
-                          onChange={(event) => setFullName(event.target.value)}
+                          value={firstName}
+                          onChange={(event) => {
+                            setFirstName(event.target.value);
+                            setNameError("");
+                          }}
                         />
                       </label>
+                      <label className="space-y-1.5 text-sm">
+                        <span className="font-medium">
+                          Last Name <span className="text-destructive">*</span>
+                        </span>
+                        <Input
+                          ref={lastNameInputRef}
+                          autoComplete="family-name"
+                          required
+                          maxLength={120}
+                          value={lastName}
+                          onChange={(event) => {
+                            setLastName(event.target.value);
+                            setNameError("");
+                          }}
+                        />
+                      </label>
+                      {nameError && (
+                        <p role="alert" className="text-sm text-destructive sm:col-span-2">
+                          {nameError}
+                        </p>
+                      )}
                       <label className="space-y-1.5 text-sm">
                         <span className="font-medium">
                           Contact Number <span className="text-destructive">*</span>
@@ -1149,7 +1211,7 @@ export function CustomerPage() {
                           Customer Photo <span className="text-destructive">*</span>
                         </p>
                         <p className="mt-1 text-xs text-muted-foreground">
-                          Take a live selfie using your camera. JPEG, PNG, or WebP · up to 5 MB.
+                          Take a photo using your camera. JPEG, PNG, or WebP · up to 5 MB.
                         </p>
                       </div>
                       {isCameraOpen ? (
@@ -1160,8 +1222,8 @@ export function CustomerPage() {
                             muted
                             playsInline
                             onLoadedMetadata={() => setIsCameraReady(true)}
-                            aria-label="Live customer selfie camera preview"
-                            className="max-h-80 w-full rounded-md bg-black object-contain"
+                            aria-label="Live customer photo camera preview"
+                            className="max-h-80 w-full -scale-x-100 rounded-md bg-black object-contain"
                           />
                           <div className="flex flex-wrap gap-2">
                             <Button
@@ -1180,11 +1242,11 @@ export function CustomerPage() {
                         <div className="flex flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-center">
                           <img
                             src={customerPhotoUrl}
-                            alt="Captured customer selfie preview"
+                            alt="Captured customer photo preview"
                             className="h-28 w-28 rounded-md border object-cover"
                           />
                           <div className="min-w-0 flex-1">
-                            <p className="text-sm font-medium">Selfie captured</p>
+                            <p className="text-sm font-medium">Photo captured</p>
                             <p className="mt-1 text-xs text-muted-foreground">
                               {(customerPhoto.size / (1024 * 1024)).toFixed(2)} MB · Private photo
                               upload happens when you place the reservation.
@@ -1212,7 +1274,7 @@ export function CustomerPage() {
                           onClick={startCamera}
                         >
                           <Camera className="h-4 w-4" />
-                          {isStartingCamera ? "Starting camera..." : "Take Live Selfie"}
+                          {isStartingCamera ? "Starting camera..." : "Take Photo"}
                         </Button>
                       )}
                       {cameraError && (
@@ -1665,6 +1727,7 @@ export function CustomerPage() {
             </div>
           </>
         )}
+        {!reservationOpen && <CustomerReviews />}
       </main>
 
       <Dialog

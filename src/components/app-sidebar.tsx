@@ -10,6 +10,7 @@ import {
   Coffee,
   History,
   ClipboardList,
+  Star,
 } from "lucide-react";
 import {
   Sidebar,
@@ -42,6 +43,7 @@ export function AppSidebar({ isAdmin }: { isAdmin: boolean }) {
     ? [
         ...nav.slice(0, 5),
         { title: "Reservations", url: "/reservations", icon: ClipboardList },
+        { title: "Reviews", url: "/reviews", icon: Star },
         ...nav.slice(5),
         { title: "Users", url: "/users", icon: Users },
       ]

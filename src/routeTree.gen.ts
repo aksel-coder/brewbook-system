@@ -20,6 +20,7 @@ import { Route as AuthenticatedInventoryRouteImport } from './routes/_authentica
 import { Route as AuthenticatedProductsRouteImport } from './routes/_authenticated.products'
 import { Route as AuthenticatedReportsRouteImport } from './routes/_authenticated.reports'
 import { Route as AuthenticatedReservationsRouteImport } from './routes/_authenticated.reservations'
+import { Route as AuthenticatedReviewsRouteImport } from './routes/_authenticated.reviews'
 import { Route as AuthenticatedUsersRouteImport } from './routes/_authenticated.users'
 import { Route as AuthenticatedSalesIndexRouteImport } from './routes/_authenticated.sales.index'
 import { Route as AuthenticatedSalesHistoryRouteImport } from './routes/_authenticated.sales.history'
@@ -79,6 +80,11 @@ const AuthenticatedReservationsRoute =
     path: '/reservations',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedReviewsRoute = AuthenticatedReviewsRouteImport.update({
+  id: '/reviews',
+  path: '/reviews',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
 const AuthenticatedUsersRoute = AuthenticatedUsersRouteImport.update({
   id: '/users',
   path: '/users',
@@ -107,6 +113,7 @@ export interface FileRoutesByFullPath {
   '/products': typeof AuthenticatedProductsRoute
   '/reports': typeof AuthenticatedReportsRoute
   '/reservations': typeof AuthenticatedReservationsRoute
+  '/reviews': typeof AuthenticatedReviewsRoute
   '/users': typeof AuthenticatedUsersRoute
   '/sales/history': typeof AuthenticatedSalesHistoryRoute
   '/sales/': typeof AuthenticatedSalesIndexRoute
@@ -122,6 +129,7 @@ export interface FileRoutesByTo {
   '/products': typeof AuthenticatedProductsRoute
   '/reports': typeof AuthenticatedReportsRoute
   '/reservations': typeof AuthenticatedReservationsRoute
+  '/reviews': typeof AuthenticatedReviewsRoute
   '/users': typeof AuthenticatedUsersRoute
   '/sales/history': typeof AuthenticatedSalesHistoryRoute
   '/sales': typeof AuthenticatedSalesIndexRoute
@@ -139,6 +147,7 @@ export interface FileRoutesById {
   '/_authenticated/products': typeof AuthenticatedProductsRoute
   '/_authenticated/reports': typeof AuthenticatedReportsRoute
   '/_authenticated/reservations': typeof AuthenticatedReservationsRoute
+  '/_authenticated/reviews': typeof AuthenticatedReviewsRoute
   '/_authenticated/users': typeof AuthenticatedUsersRoute
   '/_authenticated/sales/history': typeof AuthenticatedSalesHistoryRoute
   '/_authenticated/sales/': typeof AuthenticatedSalesIndexRoute
@@ -156,6 +165,7 @@ export interface FileRouteTypes {
     | '/products'
     | '/reports'
     | '/reservations'
+    | '/reviews'
     | '/users'
     | '/sales/history'
     | '/sales/'
@@ -171,6 +181,7 @@ export interface FileRouteTypes {
     | '/products'
     | '/reports'
     | '/reservations'
+    | '/reviews'
     | '/users'
     | '/sales/history'
     | '/sales'
@@ -187,6 +198,7 @@ export interface FileRouteTypes {
     | '/_authenticated/products'
     | '/_authenticated/reports'
     | '/_authenticated/reservations'
+    | '/_authenticated/reviews'
     | '/_authenticated/users'
     | '/_authenticated/sales/history'
     | '/_authenticated/sales/'
@@ -280,6 +292,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedReservationsRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/reviews': {
+      id: '/_authenticated/reviews'
+      path: '/reviews'
+      fullPath: '/reviews'
+      preLoaderRoute: typeof AuthenticatedReviewsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/users': {
       id: '/_authenticated/users'
       path: '/users'
@@ -310,6 +329,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedProductsRoute: typeof AuthenticatedProductsRoute
   AuthenticatedReportsRoute: typeof AuthenticatedReportsRoute
   AuthenticatedReservationsRoute: typeof AuthenticatedReservationsRoute
+  AuthenticatedReviewsRoute: typeof AuthenticatedReviewsRoute
   AuthenticatedUsersRoute: typeof AuthenticatedUsersRoute
   AuthenticatedSalesHistoryRoute: typeof AuthenticatedSalesHistoryRoute
   AuthenticatedSalesIndexRoute: typeof AuthenticatedSalesIndexRoute
@@ -321,6 +341,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedProductsRoute: AuthenticatedProductsRoute,
   AuthenticatedReportsRoute: AuthenticatedReportsRoute,
   AuthenticatedReservationsRoute: AuthenticatedReservationsRoute,
+  AuthenticatedReviewsRoute: AuthenticatedReviewsRoute,
   AuthenticatedUsersRoute: AuthenticatedUsersRoute,
   AuthenticatedSalesHistoryRoute: AuthenticatedSalesHistoryRoute,
   AuthenticatedSalesIndexRoute: AuthenticatedSalesIndexRoute,

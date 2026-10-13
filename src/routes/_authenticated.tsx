@@ -14,6 +14,7 @@ const adminOnlyPaths = new Set([
   "/inventory",
   "/products",
   "/reservations",
+  "/reviews",
   "/reports",
   "/users",
 ]);
@@ -36,7 +37,7 @@ export const Route = createFileRoute("/_authenticated")({
         if (adminOnlyPaths.has(pathname)) throw redirect({ to: "/sales", replace: true });
         return;
       }
-      if (["/inventory", "/products", "/reservations", "/users"].includes(pathname)) {
+      if (["/inventory", "/products", "/reservations", "/reviews", "/users"].includes(pathname)) {
         throw redirect({ to: "/sales", replace: true });
       }
       if (adminOnlyPaths.has(pathname)) return;

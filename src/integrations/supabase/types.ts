@@ -382,6 +382,44 @@ export type Database = {
         };
         Relationships: [];
       };
+      customer_reviews: {
+        Row: {
+          id: string;
+          reservation_id: string;
+          rating: number;
+          comment: string | null;
+          status: "pending" | "published" | "hidden" | "removed";
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          reservation_id: string;
+          rating: number;
+          comment?: string | null;
+          status?: "pending" | "published" | "hidden" | "removed";
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          reservation_id?: string;
+          rating?: number;
+          comment?: string | null;
+          status?: "pending" | "published" | "hidden" | "removed";
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "customer_reviews_reservation_id_fkey";
+            columns: ["reservation_id"];
+            isOneToOne: true;
+            referencedRelation: "reservations";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       products: {
         Row: {
           category_id: string | null;
@@ -622,6 +660,15 @@ export type Database = {
           p_notes: string;
           p_pickup_date: string;
           p_pickup_time: string;
+        };
+        Returns: Json;
+      };
+      submit_customer_review: {
+        Args: {
+          p_reservation_number: string;
+          p_contact_number: string;
+          p_rating: number;
+          p_comment?: string | null;
         };
         Returns: Json;
       };
