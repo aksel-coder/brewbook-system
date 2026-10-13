@@ -307,6 +307,81 @@ export type Database = {
         };
         Relationships: [];
       };
+      reservation_payments: {
+        Row: {
+          reservation_id: string;
+          payment_method: "cash" | "gcash";
+          payment_status: "awaiting_payment" | "awaiting_verification" | "paid" | "rejected";
+          transaction_reference: string | null;
+          screenshot_path: string | null;
+          rejection_reason: string | null;
+          verified_by: string | null;
+          verified_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          reservation_id: string;
+          payment_method: "cash" | "gcash";
+          payment_status: "awaiting_payment" | "awaiting_verification" | "paid" | "rejected";
+          transaction_reference?: string | null;
+          screenshot_path?: string | null;
+          rejection_reason?: string | null;
+          verified_by?: string | null;
+          verified_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          reservation_id?: string;
+          payment_method?: "cash" | "gcash";
+          payment_status?: "awaiting_payment" | "awaiting_verification" | "paid" | "rejected";
+          transaction_reference?: string | null;
+          screenshot_path?: string | null;
+          rejection_reason?: string | null;
+          verified_by?: string | null;
+          verified_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      reservation_payment_events: {
+        Row: {
+          id: string;
+          reservation_id: string;
+          payment_method: "cash" | "gcash";
+          payment_status: "awaiting_payment" | "awaiting_verification" | "paid" | "rejected";
+          transaction_reference: string | null;
+          rejection_reason: string | null;
+          changed_by: string | null;
+          changed_by_role: "customer" | "admin";
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          reservation_id: string;
+          payment_method: "cash" | "gcash";
+          payment_status: "awaiting_payment" | "awaiting_verification" | "paid" | "rejected";
+          transaction_reference?: string | null;
+          rejection_reason?: string | null;
+          changed_by?: string | null;
+          changed_by_role: "customer" | "admin";
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          reservation_id?: string;
+          payment_method?: "cash" | "gcash";
+          payment_status?: "awaiting_payment" | "awaiting_verification" | "paid" | "rejected";
+          transaction_reference?: string | null;
+          rejection_reason?: string | null;
+          changed_by?: string | null;
+          changed_by_role?: "customer" | "admin";
+          created_at?: string;
+        };
+        Relationships: [];
+      };
       products: {
         Row: {
           category_id: string | null;
@@ -547,6 +622,24 @@ export type Database = {
           p_notes: string;
           p_pickup_date: string;
           p_pickup_time: string;
+        };
+        Returns: Json;
+      };
+      record_reservation_payment_submission: {
+        Args: {
+          p_reservation_id: string;
+          p_payment_method: string;
+          p_transaction_reference: string | null;
+          p_screenshot_path: string | null;
+        };
+        Returns: Json;
+      };
+      verify_reservation_payment: {
+        Args: {
+          p_reservation_id: string;
+          p_actor_user_id: string;
+          p_action: string;
+          p_reason?: string | null;
         };
         Returns: Json;
       };

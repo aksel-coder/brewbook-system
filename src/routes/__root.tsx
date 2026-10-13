@@ -21,7 +21,12 @@ function NotFoundComponent() {
         <h1 className="font-display text-7xl font-bold text-foreground">404</h1>
         <h2 className="mt-4 text-xl font-semibold">Page not found</h2>
         <p className="mt-2 text-sm text-muted-foreground">This page doesn't exist.</p>
-        <a href="/" className="mt-6 inline-flex rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">Go home</a>
+        <a
+          href="/"
+          className="mt-6 inline-flex rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
+        >
+          Go home
+        </a>
       </div>
     </div>
   );
@@ -29,7 +34,9 @@ function NotFoundComponent() {
 
 function ErrorComponent({ error, reset }: ErrorComponentProps) {
   const router = useRouter();
-  useEffect(() => { reportLovableError(error, { boundary: "tanstack_root_error_component" }); }, [error]);
+  useEffect(() => {
+    reportLovableError(error, { boundary: "tanstack_root_error_component" });
+  }, [error]);
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="max-w-md text-center">
@@ -37,7 +44,15 @@ function ErrorComponent({ error, reset }: ErrorComponentProps) {
         <p className="mt-2 text-sm text-muted-foreground">
           {error instanceof Error ? error.message : String(error)}
         </p>
-        <button onClick={() => { router.invalidate(); reset(); }} className="mt-6 rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground">Try again</button>
+        <button
+          onClick={() => {
+            router.invalidate();
+            reset();
+          }}
+          className="mt-6 rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground"
+        >
+          Try again
+        </button>
       </div>
     </div>
   );
@@ -57,7 +72,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { rel: "stylesheet", href: appCss },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
-      { rel: "stylesheet", href: "https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" },
+      {
+        rel: "stylesheet",
+        href: "https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap",
+      },
     ],
   }),
   shellComponent: RootShell,
@@ -69,8 +87,13 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 function RootShell({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
-      <head><HeadContent /></head>
-      <body>{children}<Scripts /></body>
+      <head>
+        <HeadContent />
+      </head>
+      <body>
+        {children}
+        <Scripts />
+      </body>
     </html>
   );
 }
@@ -79,7 +102,9 @@ function AuthInvalidator() {
   const router = useRouter();
   const qc = useQueryClient();
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event) => {
       // Only react to actual sign-in / sign-out transitions.
       // INITIAL_SESSION and TOKEN_REFRESHED fire on every getUser() call and
       // would cause an infinite invalidate → beforeLoad → getUser loop.
@@ -99,14 +124,33 @@ function RootComponent() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("/service-worker.js").catch(error => {
-        console.error("Service worker registration failed:", error);
-      });
+      if (import.meta.env.PROD) {
+        navigator.serviceWorker.register("/service-worker.js").catch((error) => {
+          console.error("Service worker registration failed:", error);
+        });
+      } else {
+        navigator.serviceWorker
+          .getRegistrations()
+          .then((registrations) => {
+            const appRegistrations = registrations.filter((registration) =>
+              [registration.active, registration.installing, registration.waiting].some(
+                (worker) =>
+                  worker?.scriptURL === new URL("/service-worker.js", window.location.origin).href,
+              ),
+            );
+            return Promise.all(appRegistrations.map((registration) => registration.unregister()));
+          })
+          .catch((error) => {
+            console.error("Service worker cleanup failed:", error);
+          });
+      }
     }
     try {
-      ["coffee-zone-cart", "coffee-zone-selected-products", "pos-cart", "selectedProducts"].forEach((key) => {
-        window.localStorage.removeItem(key);
-      });
+      ["coffee-zone-cart", "coffee-zone-selected-products", "pos-cart", "selectedProducts"].forEach(
+        (key) => {
+          window.localStorage.removeItem(key);
+        },
+      );
     } catch {
       // ignore storage access failures during startup
     }

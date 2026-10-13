@@ -1,16 +1,16 @@
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
+import { CoffeeZoneLandingPage } from "@/components/coffee-zone-landing";
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Coffee Zone Menu" },
+      { title: "Coffee Zone — Sales & Inventory Management" },
       {
         name: "description",
-        content: "Browse the Coffee Zone menu and explore available drinks and treats.",
+        content:
+          "All-in-one sales and inventory platform for modern coffee shops. Track stock, run the register, manage staff and grow with insights.",
       },
     ],
   }),
-  beforeLoad: () => {
-    throw redirect({ to: "/customer", replace: true });
-  },
+  component: CoffeeZoneLandingPage,
 });

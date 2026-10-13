@@ -35,22 +35,22 @@ export const getMyRole = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     const { supabase, userId } = context;
 
-    // 1. Fetch roles from the custom table and user data from the auth table concurrently
-    const [{ data: roles }, { data: authData, error: authError }] = await Promise.all([
-      supabase
-        .from("user_roles")
-        .select("role")
-        .eq("user_id", userId),
-      supabaseAdmin.auth.admin.getUserById(userId)
-    ]);
+    const [{ data: roles, error: rolesError }, { data: authData, error: authError }] =
+      await Promise.all([
+        supabase.from("user_roles").select("role").eq("user_id", userId),
+        supabaseAdmin.auth.admin.getUserById(userId),
+      ]);
+
+    if (rolesError) {
+      console.error("Error verifying user role:", rolesError.message);
+      throw new Error("Your account role could not be verified. Please retry or contact an administrator.");
+    }
 
     if (authError) {
       console.error("Error fetching auth user:", authError.message);
     }
 
-    const isAdmin = (roles ?? []).some((r: any) => r.role === "admin");
-    
-    // 2. Safely extract user and metadata from the auth table response
+    const isAdmin = (roles ?? []).some((role) => role.role === "admin");
     const authUser = authData?.user;
     const metadata = authUser?.user_metadata;
 
@@ -59,8 +59,7 @@ export const getMyRole = createServerFn({ method: "GET" })
       isAdmin,
       role: isAdmin ? "admin" : "cashier",
       fullName: metadata?.full_name ?? "",
-      // Fallback to username metadata, then to email prefix, then to empty string
-      username: metadata?.username ?? authUser?.email?.split('@')[0] ?? "", 
+      username: metadata?.username ?? authUser?.email?.split("@")[0] ?? "",
     };
   });
 

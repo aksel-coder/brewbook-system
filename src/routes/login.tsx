@@ -47,32 +47,40 @@ function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [verificationError, setVerificationError] = useState("");
+
+  const verifyAccessAndContinue = async () => {
+    setVerificationError("");
+    try {
+      const role = await fetchRole();
+      toast.success("Welcome back!");
+      navigate({
+        to: (role.isAdmin ? safeRedirect(search.redirect) : cashierRedirect(search.redirect)) as any,
+        replace: true,
+      });
+    } catch {
+      const message =
+        "You are signed in, but your account role could not be verified. Retry the check or contact an administrator.";
+      setVerificationError(message);
+      toast.error(message);
+    }
+  };
 
   const signIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    setVerificationError("");
     try {
       const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) return toast.error(error.message);
-      if (!data.session) return toast.error("Could not establish a session. Please try again.");
-      let isAdmin = false;
-      try {
-        const role = await fetchRole();
-        isAdmin = role.isAdmin;
-      } catch (error) {
-        toast.error(
-          error instanceof Error
-            ? `Signed in, but account access could not be verified: ${error.message}`
-            : "Signed in, but account access could not be verified.",
-        );
-        navigate({ to: "/sales", replace: true });
+      if (error) {
+        toast.error(error.message);
         return;
       }
-      toast.success("Welcome back!");
-      navigate({
-        to: (isAdmin ? safeRedirect(search.redirect) : cashierRedirect(search.redirect)) as any,
-        replace: true,
-      });
+      if (!data.session) {
+        toast.error("Could not establish a session. Please try again.");
+        return;
+      }
+      await verifyAccessAndContinue();
     } finally {
       setLoading(false);
     }
@@ -101,6 +109,27 @@ function LoginPage() {
                 <Label htmlFor="password">Password</Label>
                 <Input id="password" type="password" required value={password} onChange={(e) => setPassword(e.target.value)} />
               </div>
+              {verificationError && (
+                <div role="alert" className="space-y-2 rounded-md border border-destructive/40 bg-destructive/5 p-3">
+                  <p className="text-sm text-destructive">{verificationError}</p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full"
+                    disabled={loading}
+                    onClick={async () => {
+                      setLoading(true);
+                      try {
+                        await verifyAccessAndContinue();
+                      } finally {
+                        setLoading(false);
+                      }
+                    }}
+                  >
+                    Retry access verification
+                  </Button>
+                </div>
+              )}
               <Button type="submit" className="w-full" disabled={loading}>
                 {loading ? "Signing in..." : "Sign in"}
               </Button>

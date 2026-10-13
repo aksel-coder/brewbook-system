@@ -13,7 +13,6 @@ import {
   ArrowRight,
   CheckCircle2,
 } from "lucide-react";
-import logo from "@/assets/coffee-zone-logo.jpg.asset.json";
 import { getDashboardStats } from "@/lib/api/coffee.functions";
 
 const features = [
@@ -77,7 +76,7 @@ export function CoffeeZoneLandingPage() {
     },
   });
 
-  const logoSrc = logo?.url ?? "/coffeLogo.jpg";
+  const logoSrc = "/coffeLogo.jpg";
 
   return (
     <div className="min-h-screen bg-background">
@@ -96,6 +95,9 @@ export function CoffeeZoneLandingPage() {
             </a>
           </nav>
           <div className="flex items-center gap-2">
+            <Button asChild variant="outline" size="sm">
+              <Link to="/customer">Order as a customer</Link>
+            </Button>
             <Button asChild variant="ghost" size="sm">
               <Link to="/login" search={{}}>
                 Sign in

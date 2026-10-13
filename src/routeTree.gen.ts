@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as MainProjectRouteImport } from './routes/MainProject'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as CustomerRouteImport } from './routes/customer'
+import { Route as LandingpageRouteImport } from './routes/landingpage'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated.dashboard'
 import { Route as AuthenticatedInventoryRouteImport } from './routes/_authenticated.inventory'
@@ -40,6 +41,11 @@ const AuthenticatedRoute = AuthenticatedRouteImport.update({
 const CustomerRoute = CustomerRouteImport.update({
   id: '/customer',
   path: '/customer',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LandingpageRoute = LandingpageRouteImport.update({
+  id: '/landingpage',
+  path: '/landingpage',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -94,6 +100,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/MainProject': typeof MainProjectRoute
   '/customer': typeof CustomerRoute
+  '/landingpage': typeof LandingpageRoute
   '/login': typeof LoginRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/inventory': typeof AuthenticatedInventoryRoute
@@ -108,6 +115,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/MainProject': typeof MainProjectRoute
   '/customer': typeof CustomerRoute
+  '/landingpage': typeof LandingpageRoute
   '/login': typeof LoginRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/inventory': typeof AuthenticatedInventoryRoute
@@ -124,6 +132,7 @@ export interface FileRoutesById {
   '/MainProject': typeof MainProjectRoute
   '/_authenticated': typeof AuthenticatedRouteWithChildren
   '/customer': typeof CustomerRoute
+  '/landingpage': typeof LandingpageRoute
   '/login': typeof LoginRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/inventory': typeof AuthenticatedInventoryRoute
@@ -140,6 +149,7 @@ export interface FileRouteTypes {
     | '/'
     | '/MainProject'
     | '/customer'
+    | '/landingpage'
     | '/login'
     | '/dashboard'
     | '/inventory'
@@ -154,6 +164,7 @@ export interface FileRouteTypes {
     | '/'
     | '/MainProject'
     | '/customer'
+    | '/landingpage'
     | '/login'
     | '/dashboard'
     | '/inventory'
@@ -169,6 +180,7 @@ export interface FileRouteTypes {
     | '/MainProject'
     | '/_authenticated'
     | '/customer'
+    | '/landingpage'
     | '/login'
     | '/_authenticated/dashboard'
     | '/_authenticated/inventory'
@@ -185,6 +197,7 @@ export interface RootRouteChildren {
   MainProjectRoute: typeof MainProjectRoute
   AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
   CustomerRoute: typeof CustomerRoute
+  LandingpageRoute: typeof LandingpageRoute
   LoginRoute: typeof LoginRoute
 }
 
@@ -216,6 +229,13 @@ declare module '@tanstack/react-router' {
       path: '/customer'
       fullPath: '/customer'
       preLoaderRoute: typeof CustomerRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/landingpage': {
+      id: '/landingpage'
+      path: '/landingpage'
+      fullPath: '/landingpage'
+      preLoaderRoute: typeof LandingpageRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -315,6 +335,7 @@ const rootRouteChildren: RootRouteChildren = {
   MainProjectRoute: MainProjectRoute,
   AuthenticatedRoute: AuthenticatedRouteWithChildren,
   CustomerRoute: CustomerRoute,
+  LandingpageRoute: LandingpageRoute,
   LoginRoute: LoginRoute,
 }
 export const routeTree = rootRouteImport

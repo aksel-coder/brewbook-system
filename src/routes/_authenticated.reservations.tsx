@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useMemo, useState } from "react";
-import { CalendarClock, ClipboardList, Eye, LoaderCircle, Search, UserRound } from "lucide-react";
+import { Banknote, CalendarClock, ClipboardList, Eye, LoaderCircle, Search, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -38,8 +38,10 @@ import { usePagination } from "@/hooks/use-pagination";
 import {
   completeCustomerReservation,
   createCustomerPhotoReadUrl,
+  createReservationPaymentEvidenceReadUrl,
   getCustomerReservation,
   listCustomerReservations,
+  verifyCustomerReservationPayment,
 } from "@/lib/api/reservation.functions";
 import { getMyRole } from "@/lib/api/users.functions";
 import { toast } from "sonner";
@@ -87,7 +89,9 @@ function Reservations() {
   const listFn = useServerFn(listCustomerReservations);
   const detailFn = useServerFn(getCustomerReservation);
   const photoFn = useServerFn(createCustomerPhotoReadUrl);
+  const paymentEvidenceFn = useServerFn(createReservationPaymentEvidenceReadUrl);
   const completeFn = useServerFn(completeCustomerReservation);
+  const verifyPaymentFn = useServerFn(verifyCustomerReservationPayment);
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [pendingCompletion, setPendingCompletion] = useState<{
@@ -95,6 +99,12 @@ function Reservations() {
     reservationNumber: string;
   } | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [isUpdatingPayment, setIsUpdatingPayment] = useState(false);
+  const [rejectingReservation, setRejectingReservation] = useState<{
+    reservationId: string;
+    reservationNumber: string;
+  } | null>(null);
+  const [rejectionReason, setRejectionReason] = useState("");
 
   const {
     data: me,
@@ -149,10 +159,23 @@ function Reservations() {
     staleTime: 0,
   });
 
+  const {
+    data: paymentEvidence,
+    isLoading: paymentEvidenceLoading,
+    error: paymentEvidenceError,
+  } = useQuery({
+    queryKey: ["customer-reservation-payment-evidence", selectedId],
+    queryFn: () => paymentEvidenceFn({ data: { reservation_id: selectedId! } }),
+    enabled: selectedId !== null && me?.isAdmin === true && Boolean(details?.payment?.screenshot_path),
+    refetchOnMount: "always",
+    staleTime: 0,
+  });
+
   const closeDetails = (open: boolean) => {
     if (!open) {
       setSelectedId(null);
       queryClient.removeQueries({ queryKey: ["customer-reservation-photo", selectedId] });
+      queryClient.removeQueries({ queryKey: ["customer-reservation-payment-evidence", selectedId] });
     }
   };
 
@@ -185,6 +208,34 @@ function Reservations() {
       );
     } finally {
       setIsUpdating(false);
+    }
+  };
+
+  const updatePayment = async (
+    reservationId: string,
+    action: "confirm_gcash" | "reject_gcash" | "mark_cash_paid",
+    reason?: string,
+  ) => {
+    setIsUpdatingPayment(true);
+    try {
+      await verifyPaymentFn({ data: { reservation_id: reservationId, action, reason } });
+      toast.success(
+        action === "reject_gcash"
+          ? "GCash payment rejected."
+          : action === "mark_cash_paid"
+            ? "Cash payment recorded."
+            : "GCash payment confirmed.",
+      );
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["customer-reservations"] }),
+        queryClient.invalidateQueries({ queryKey: ["customer-reservation", reservationId] }),
+      ]);
+      setRejectingReservation(null);
+      setRejectionReason("");
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : "The payment could not be updated.");
+    } finally {
+      setIsUpdatingPayment(false);
     }
   };
 
@@ -273,6 +324,7 @@ function Reservations() {
                   <TableHead>Pickup</TableHead>
                   <TableHead className="text-right">Total</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>Payment</TableHead>
                   <TableHead>Created</TableHead>
                   <TableHead className="text-right">Action</TableHead>
                 </TableRow>
@@ -280,14 +332,14 @@ function Reservations() {
               <TableBody>
                 {isLoading ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="h-28 text-center text-muted-foreground">
+                    <TableCell colSpan={9} className="h-28 text-center text-muted-foreground">
                       <LoaderCircle className="mr-2 inline h-4 w-4 animate-spin" /> Loading
                       reservations…
                     </TableCell>
                   </TableRow>
                 ) : paginatedItems.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="h-28 text-center text-muted-foreground">
+                    <TableCell colSpan={9} className="h-28 text-center text-muted-foreground">
                       No reservations match your search.
                     </TableCell>
                   </TableRow>
@@ -324,6 +376,18 @@ function Reservations() {
                         >
                           {displayReservationStatus(reservation.status)}
                         </Badge>
+                      </TableCell>
+                      <TableCell>
+                        {reservation.payment ? (
+                          <Badge variant={reservation.payment.payment_status === "paid" ? "secondary" : "outline"}>
+                            {reservation.payment.payment_method === "gcash" ? "GCash · " : "Cash · "}
+                            {reservation.payment.payment_status === "awaiting_verification"
+                              ? "awaiting verification"
+                              : reservation.payment.payment_status.replaceAll("_", " ")}
+                          </Badge>
+                        ) : (
+                          <span className="text-sm text-muted-foreground">Not recorded</span>
+                        )}
                       </TableCell>
                       <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
                         {formatDateTime(reservation.created_at)}
@@ -372,8 +436,20 @@ function Reservations() {
               photoUrl={photo?.signed_url}
               photoLoading={photoLoading}
               photoError={photoError}
+              paymentEvidenceUrl={paymentEvidence?.signed_url}
+              paymentEvidenceLoading={paymentEvidenceLoading}
+              paymentEvidenceError={paymentEvidenceError}
               isUpdating={isUpdating}
               onComplete={() => requestCompletion(details.id, details.reservation_number)}
+              isUpdatingPayment={isUpdatingPayment}
+              onPaymentAction={(action) => void updatePayment(details.id, action)}
+              onRejectPayment={() => {
+                setRejectingReservation({
+                  reservationId: details.id,
+                  reservationNumber: details.reservation_number,
+                });
+                setRejectionReason("");
+              }}
               hasSale={Boolean(details.sale)}
             />
           ) : null}
@@ -407,6 +483,49 @@ function Reservations() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <AlertDialog
+        open={rejectingReservation !== null}
+        onOpenChange={(open) => {
+          if (!open && !isUpdatingPayment) {
+            setRejectingReservation(null);
+            setRejectionReason("");
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Reject GCash payment evidence?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {rejectingReservation?.reservationNumber} will remain unpaid. Give the customer-facing reason for rejection.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="payment-rejection-reason">Rejection reason</Label>
+            <Input
+              id="payment-rejection-reason"
+              maxLength={500}
+              value={rejectionReason}
+              onChange={(event) => setRejectionReason(event.target.value)}
+              placeholder="Explain what is missing or invalid"
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isUpdatingPayment}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={isUpdatingPayment || !rejectionReason.trim()}
+              onClick={(event) => {
+                event.preventDefault();
+                if (rejectingReservation && rejectionReason.trim()) {
+                  void updatePayment(rejectingReservation.reservationId, "reject_gcash", rejectionReason.trim());
+                }
+              }}
+            >
+              {isUpdatingPayment ? "Saving…" : "Reject payment"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }
@@ -416,16 +535,28 @@ function ReservationDetailContent({
   photoUrl,
   photoLoading,
   photoError,
+  paymentEvidenceUrl,
+  paymentEvidenceLoading,
+  paymentEvidenceError,
   isUpdating,
   onComplete,
+  isUpdatingPayment,
+  onPaymentAction,
+  onRejectPayment,
   hasSale,
 }: {
   details: ReservationDetails;
   photoUrl?: string;
   photoLoading: boolean;
   photoError: Error | null;
+  paymentEvidenceUrl?: string;
+  paymentEvidenceLoading: boolean;
+  paymentEvidenceError: Error | null;
   isUpdating: boolean;
   onComplete: () => void;
+  isUpdatingPayment: boolean;
+  onPaymentAction: (action: "confirm_gcash" | "mark_cash_paid") => void;
+  onRejectPayment: () => void;
   hasSale: boolean;
 }) {
   return (
@@ -501,6 +632,127 @@ function ReservationDetailContent({
           )}
         </div>
       </div>
+
+      <section className="space-y-3 rounded-lg border p-4" aria-labelledby="reservation-payment-heading">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h3 id="reservation-payment-heading" className="font-semibold">Payment verification</h3>
+            {details.payment ? (
+              <p className="mt-1 text-sm text-muted-foreground">
+                {details.payment.payment_method === "gcash" ? "GCash" : "Cash"} ·{" "}
+                {details.payment.payment_status.replaceAll("_", " ")}
+              </p>
+            ) : (
+              <p className="mt-1 text-sm text-muted-foreground">No payment record is available for this reservation.</p>
+            )}
+          </div>
+          {details.payment && (
+            <Badge variant={details.payment.payment_status === "paid" ? "secondary" : "outline"}>
+              {details.payment.payment_status.replaceAll("_", " ")}
+            </Badge>
+          )}
+        </div>
+
+        {details.payment && (
+          <>
+            <div className="grid gap-3 text-sm sm:grid-cols-2">
+              <div>
+                <Label className="text-xs text-muted-foreground">Amount</Label>
+                <p className="mt-1 font-semibold">{peso(details.total_amount)}</p>
+              </div>
+              <div>
+                <Label className="text-xs text-muted-foreground">Transaction reference</Label>
+                <p className="mt-1 break-all font-medium">{details.payment.transaction_reference || "Not provided"}</p>
+              </div>
+              {details.payment.verified_at && (
+                <div>
+                  <Label className="text-xs text-muted-foreground">Last verification</Label>
+                  <p className="mt-1">{formatDateTime(details.payment.verified_at)}</p>
+                </div>
+              )}
+              {details.payment.rejection_reason && (
+                <div className="sm:col-span-2">
+                  <Label className="text-xs text-muted-foreground">Rejection reason</Label>
+                  <p className="mt-1">{details.payment.rejection_reason}</p>
+                </div>
+              )}
+            </div>
+
+            {details.payment.payment_method === "gcash" && details.payment.screenshot_path && (
+              <div>
+                <Label className="text-xs text-muted-foreground">Uploaded payment screenshot</Label>
+                {paymentEvidenceLoading ? (
+                  <div className="mt-2 flex h-40 items-center justify-center rounded-lg border bg-muted text-muted-foreground">
+                    <LoaderCircle className="h-5 w-5 animate-spin" />
+                  </div>
+                ) : paymentEvidenceError || !paymentEvidenceUrl ? (
+                  <p role="alert" className="mt-2 rounded-md border border-destructive/40 p-3 text-sm text-destructive">
+                    Payment screenshot could not be opened. Refresh the reservation and try again.
+                  </p>
+                ) : (
+                  <a href={paymentEvidenceUrl} target="_blank" rel="noreferrer" className="mt-2 block w-fit">
+                    <img
+                      className="max-h-80 max-w-full rounded-lg border object-contain"
+                      src={paymentEvidenceUrl}
+                      alt={`GCash payment evidence for ${details.reservation_number}`}
+                      referrerPolicy="no-referrer"
+                    />
+                    <span className="mt-1 block text-xs text-primary underline">Open screenshot at full size</span>
+                  </a>
+                )}
+              </div>
+            )}
+
+            {details.payment.payment_status === "awaiting_verification" && details.payment.payment_method === "gcash" && (
+              <div className="flex flex-wrap gap-2 border-t pt-3">
+                <Button
+                  disabled={isUpdatingPayment}
+                  onClick={() => onPaymentAction("confirm_gcash")}
+                >
+                  {isUpdatingPayment ? "Saving…" : "Confirm GCash payment"}
+                </Button>
+                <Button
+                  variant="outline"
+                  disabled={isUpdatingPayment}
+                  onClick={onRejectPayment}
+                >
+                  Reject evidence
+                </Button>
+              </div>
+            )}
+            {details.payment.payment_status === "awaiting_payment" && details.payment.payment_method === "cash" && (
+              <Button
+                disabled={isUpdatingPayment}
+                onClick={() => onPaymentAction("mark_cash_paid")}
+              >
+                <Banknote className="h-4 w-4" />
+                {isUpdatingPayment ? "Saving…" : "Record cash received"}
+              </Button>
+            )}
+            <div className="space-y-2 border-t pt-3">
+              <h4 className="text-sm font-semibold">Payment history</h4>
+              {details.payment.history.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No payment events recorded.</p>
+              ) : (
+                <ol className="space-y-2">
+                  {details.payment.history.map((event) => (
+                    <li key={event.id} className="flex flex-wrap justify-between gap-x-4 gap-y-1 rounded-md bg-secondary/40 p-2 text-sm">
+                      <span>
+                        <span className="font-medium">{event.payment_status.replaceAll("_", " ")}</span>
+                        <span className="ml-2 text-muted-foreground">by {event.changed_by_role}</span>
+                        {event.rejection_reason && (
+                          <span className="block text-muted-foreground">{event.rejection_reason}</span>
+                        )}
+                      </span>
+                      <time className="text-muted-foreground">{formatDateTime(event.created_at)}</time>
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </div>
+          </>
+        )}
+      </section>
 
       <div className="space-y-2">
         <h3 className="font-semibold">Reserved items</h3>

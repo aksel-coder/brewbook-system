@@ -7,7 +7,9 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { requireSupabaseServiceRoleKey } from "@/lib/supabase-env.server";
 
 const PHOTO_BUCKET = "customer-photos";
+const PAYMENT_BUCKET = "reservation-payment-evidence";
 const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
+const MAX_PAYMENT_SCREENSHOT_BYTES = 5 * 1024 * 1024;
 const photoTypeByExtension = {
   jpg: "image/jpeg",
   jpeg: "image/jpeg",
@@ -29,6 +31,13 @@ const reservationSchema = z.object({
   notes: z.string().max(1000),
   photo_path: z.string().regex(/^incoming\/[0-9a-f-]{36}\.(?:jpg|jpeg|png|webp)$/i),
   photo_upload_proof: z.string().regex(/^\d+\.[0-9a-f]{64}$/i),
+  payment_method: z.enum(["cash", "gcash"]),
+  transaction_reference: z.string().trim().max(120).optional(),
+  payment_screenshot_path: z
+    .string()
+    .regex(/^incoming\/[0-9a-f-]{36}\.(?:jpg|jpeg|png|webp)$/i)
+    .optional(),
+  payment_screenshot_proof: z.string().regex(/^\d+\.[0-9a-f]{64}$/i).optional(),
   items: z
     .array(
       z.object({
@@ -39,12 +48,30 @@ const reservationSchema = z.object({
     )
     .min(1)
     .max(30),
+}).superRefine((data, context) => {
+  if (data.payment_method === "gcash" && (!data.payment_screenshot_path || !data.payment_screenshot_proof)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["payment_screenshot_path"],
+      message: "Upload your GCash payment screenshot before submitting.",
+    });
+  }
+  if (data.payment_method === "cash" && (data.payment_screenshot_path || data.payment_screenshot_proof || data.transaction_reference)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["payment_method"],
+      message: "Cash reservations cannot include GCash payment evidence.",
+    });
+  }
 });
 
 const reservationResultSchema = z.object({
+  id: z.string().uuid(),
   reservation_number: z.string(),
   total_amount: z.number(),
   created_at: z.string(),
+  payment_method: z.enum(["cash", "gcash"]),
+  payment_status: z.enum(["awaiting_payment", "awaiting_verification", "paid", "rejected"]),
 });
 
 const publicReservationErrors = new Set([
@@ -67,6 +94,10 @@ const publicReservationErrors = new Set([
   "Recipe-based product has no recipe",
   "Insufficient ingredient stock",
   "Insufficient product stock",
+  "Upload your GCash payment screenshot before submitting.",
+  "A valid GCash screenshot is required",
+  "GCash payment screenshot upload has expired. Please upload it again.",
+  "GCash payment screenshot could not be verified. Please upload it again.",
 ]);
 
 function reportServerFailure(action: string, error: unknown) {
@@ -99,6 +130,26 @@ function makeUploadProof(path: string, expiresAt: number) {
     .update(`${path}:${expiresAt}`)
     .digest("hex");
   return `${expiresAt}.${signature}`;
+}
+
+function makePaymentUploadProof(path: string, expiresAt: number) {
+  const signature = createHmac("sha256", requireSupabaseServiceRoleKey())
+    .update(`reservation-payment:${path}:${expiresAt}`)
+    .digest("hex");
+  return `${expiresAt}.${signature}`;
+}
+
+function verifyPaymentUploadProof(path: string, proof: string) {
+  const [expiresAtText, signature] = proof.split(".");
+  const expiresAt = Number(expiresAtText);
+  if (
+    !Number.isSafeInteger(expiresAt) ||
+    expiresAt <= Date.now() ||
+    !/^[0-9a-f]{64}$/i.test(signature ?? "")
+  ) return false;
+  const expected = Buffer.from(makePaymentUploadProof(path, expiresAt).split(".")[1], "hex");
+  const supplied = Buffer.from(signature, "hex");
+  return supplied.length === expected.length && timingSafeEqual(supplied, expected);
 }
 
 function verifyUploadProof(path: string, proof: string) {
@@ -147,7 +198,7 @@ function hasExpectedImageSignature(bytes: Uint8Array, contentType: string, exten
 async function getReservationByPhotoPath(path: string) {
   const { data, error } = await supabaseAdmin
     .from("reservations")
-    .select("reservation_number, total_amount, created_at")
+    .select("id, reservation_number, total_amount, created_at, customer_name, contact_number, pickup_date, pickup_time")
     .eq("customer_photo_path", path)
     .maybeSingle();
   if (error) {
@@ -155,6 +206,36 @@ async function getReservationByPhotoPath(path: string) {
     throw new Error("We couldn't verify the reservation. Please try again.");
   }
   return data;
+}
+
+async function assertReservationMatches(
+  reservation: NonNullable<Awaited<ReturnType<typeof getReservationByPhotoPath>>>,
+  data: z.infer<typeof reservationSchema>,
+) {
+  if (
+    reservation.customer_name !== data.customer_name ||
+    reservation.contact_number !== data.contact_number ||
+    reservation.pickup_date !== data.pickup_date ||
+    reservation.pickup_time !== data.pickup_time
+  ) throw new Error("This uploaded customer photo was already used for a different reservation.");
+
+  const { data: savedItems, error } = await supabaseAdmin
+    .from("reservation_items")
+    .select("product_id, product_variant_id, quantity")
+    .eq("reservation_id", reservation.id);
+  if (error) {
+    reportServerFailure("Unable to verify existing reservation items.", error);
+    throw new Error("We couldn't verify the reservation. Please try again.");
+  }
+  const requested = data.items
+    .map(item => `${item.product_id}:${item.variant_id ?? ""}:${item.quantity}`)
+    .sort();
+  const existing = (savedItems ?? [])
+    .map(item => `${item.product_id ?? ""}:${item.product_variant_id ?? ""}:${item.quantity}`)
+    .sort();
+  if (requested.length !== existing.length || requested.some((item, index) => item !== existing[index])) {
+    throw new Error("This uploaded customer photo was already used for a different reservation.");
+  }
 }
 
 async function authorizeReservationAdmin(userId: string) {
@@ -213,6 +294,43 @@ export const createCustomerPhotoUpload = createServerFn({ method: "POST" })
     };
   });
 
+export const createPaymentScreenshotUpload = createServerFn({ method: "POST" })
+  .inputValidator((data) =>
+    z.object({
+      content_type: z.enum(["image/jpeg", "image/png", "image/webp"]),
+      file_name: z.string().max(255),
+    }).parse(data),
+  )
+  .handler(async ({ data }) => {
+    requireSameOriginRequest();
+    if (!hasSupabaseServiceRole()) {
+      throw new Error("Customer reservations are not configured on the server.");
+    }
+    const extension = data.file_name.split(".").pop()?.toLowerCase() ?? "";
+    if (
+      !(extension in photoTypeByExtension) ||
+      photoTypeByExtension[extension as keyof typeof photoTypeByExtension] !== data.content_type
+    ) {
+      throw new Error("The GCash screenshot must be a JPEG, PNG, or WebP image.");
+    }
+
+    const path = `incoming/${randomUUID()}.${extension}`;
+    const { data: signedUpload, error } = await supabaseAdmin.storage
+      .from(PAYMENT_BUCKET)
+      .createSignedUploadUrl(path, { upsert: false });
+    if (error) {
+      reportServerFailure("Unable to create GCash screenshot upload.", error);
+      throw new Error("The GCash screenshot upload could not be started. Please try again.");
+    }
+
+    const expiresAt = Date.now() + 15 * 60 * 1000;
+    return {
+      path: signedUpload.path,
+      token: signedUpload.token,
+      proof: makePaymentUploadProof(signedUpload.path, expiresAt),
+    };
+  });
+
 export const createCustomerReservation = createServerFn({ method: "POST" })
   .inputValidator((data) => reservationSchema.parse(data))
   .handler(async ({ data }) => {
@@ -224,60 +342,155 @@ export const createCustomerReservation = createServerFn({ method: "POST" })
       throw new Error("The customer photo upload has expired. Please take the photo again.");
     }
 
-    const existingReservation = await getReservationByPhotoPath(data.photo_path);
-    if (existingReservation) return existingReservation;
-
     const extension = data.photo_path.split(".").pop()?.toLowerCase() ?? "";
     const expectedContentType =
       photoTypeByExtension[extension as keyof typeof photoTypeByExtension];
-    const { data: photo, error: photoError } = await supabaseAdmin.storage
-      .from(PHOTO_BUCKET)
-      .download(data.photo_path);
-    if (photoError || !photo) {
-      throw new Error(
-        "The customer photo upload could not be verified. Please take the photo again.",
-      );
-    }
-    if (photo.size > MAX_PHOTO_BYTES) {
-      await removeRejectedPhoto(data.photo_path, "The customer photo must be 5 MB or smaller.");
-    }
-    const photoBytes = new Uint8Array(await photo.arrayBuffer());
-    if (
-      !hasExpectedImageSignature(photoBytes, photo.type, extension) ||
-      photo.type !== expectedContentType
-    ) {
-      await removeRejectedPhoto(
-        data.photo_path,
-        "The uploaded file is not a supported customer photo.",
-      );
+    let existingReservation = await getReservationByPhotoPath(data.photo_path);
+    if (existingReservation) {
+      await assertReservationMatches(existingReservation, data);
+    } else {
+      const { data: photo, error: photoError } = await supabaseAdmin.storage
+        .from(PHOTO_BUCKET)
+        .download(data.photo_path);
+      if (photoError || !photo) {
+        throw new Error(
+          "The customer photo upload could not be verified. Please take the photo again.",
+        );
+      }
+      if (photo.size > MAX_PHOTO_BYTES) {
+        await removeRejectedPhoto(data.photo_path, "The customer photo must be 5 MB or smaller.");
+      }
+      const photoBytes = new Uint8Array(await photo.arrayBuffer());
+      if (
+        !hasExpectedImageSignature(photoBytes, photo.type, extension) ||
+        photo.type !== expectedContentType
+      ) {
+        await removeRejectedPhoto(
+          data.photo_path,
+          "The uploaded file is not a supported customer photo.",
+        );
+      }
     }
 
-    const { data: reservation, error } = await supabaseAdmin.rpc("create_customer_reservation", {
-      p_customer_name: data.customer_name,
-      p_contact_number: data.contact_number,
-      p_pickup_date: data.pickup_date,
-      p_pickup_time: data.pickup_time,
-      p_customer_photo_path: data.photo_path,
-      p_notes: data.notes,
-      p_items: data.items.map((item) => ({
-        product_id: item.product_id,
-        variant_id: item.variant_id,
-        quantity: item.quantity,
-      })),
-    });
-    if (error) {
-      const reservationAfterError = await getReservationByPhotoPath(data.photo_path);
-      if (reservationAfterError) return reservationAfterError;
-      const { error: cleanupError } = await supabaseAdmin.storage
-        .from(PHOTO_BUCKET)
-        .remove([data.photo_path]);
-      if (cleanupError) {
-        reportServerFailure("Unable to remove temporary customer photo.", cleanupError);
+    if (data.payment_method === "gcash") {
+      if (
+        !data.payment_screenshot_path ||
+        !data.payment_screenshot_proof ||
+        !verifyPaymentUploadProof(data.payment_screenshot_path, data.payment_screenshot_proof)
+      ) {
+        throw new Error("GCash payment screenshot upload has expired. Please upload it again.");
       }
-      reportServerFailure("Unable to create customer reservation.", error);
-      throw new Error(getSafeReservationError(error.message));
+      const screenshotExtension = data.payment_screenshot_path.split(".").pop()?.toLowerCase() ?? "";
+      const expectedScreenshotType =
+        photoTypeByExtension[screenshotExtension as keyof typeof photoTypeByExtension];
+      const { data: screenshot, error: screenshotError } = await supabaseAdmin.storage
+        .from(PAYMENT_BUCKET)
+        .download(data.payment_screenshot_path);
+      if (screenshotError || !screenshot) {
+        throw new Error("GCash payment screenshot could not be verified. Please upload it again.");
+      }
+      if (screenshot.size > MAX_PAYMENT_SCREENSHOT_BYTES) {
+        await removeRejectedPaymentScreenshot(
+          data.payment_screenshot_path,
+          "The GCash screenshot must be 5 MB or smaller.",
+        );
+      }
+      if (
+        screenshot.type !== expectedScreenshotType ||
+        !hasExpectedImageSignature(
+          new Uint8Array(await screenshot.arrayBuffer()),
+          screenshot.type,
+          screenshotExtension,
+        )
+      ) {
+        await removeRejectedPaymentScreenshot(
+          data.payment_screenshot_path,
+          "The uploaded GCash screenshot is not a supported image.",
+        );
+      }
     }
-    const result = reservationResultSchema.safeParse(reservation);
+
+    if (!existingReservation) {
+      const { data: reservation, error } = await supabaseAdmin.rpc("create_customer_reservation", {
+        p_customer_name: data.customer_name,
+        p_contact_number: data.contact_number,
+        p_pickup_date: data.pickup_date,
+        p_pickup_time: data.pickup_time,
+        p_customer_photo_path: data.photo_path,
+        p_notes: data.notes,
+        p_items: data.items.map((item) => ({
+          product_id: item.product_id,
+          variant_id: item.variant_id,
+          quantity: item.quantity,
+        })),
+      });
+      if (error) {
+        existingReservation = await getReservationByPhotoPath(data.photo_path);
+        if (existingReservation) {
+          await assertReservationMatches(existingReservation, data);
+        } else {
+          const { error: cleanupError } = await supabaseAdmin.storage
+            .from(PHOTO_BUCKET)
+            .remove([data.photo_path]);
+          if (cleanupError) reportServerFailure("Unable to remove temporary customer photo.", cleanupError);
+          if (data.payment_screenshot_path) {
+            const { error: screenshotCleanupError } = await supabaseAdmin.storage
+              .from(PAYMENT_BUCKET)
+              .remove([data.payment_screenshot_path]);
+            if (screenshotCleanupError) {
+              reportServerFailure("Unable to remove temporary GCash screenshot.", screenshotCleanupError);
+            }
+          }
+          reportServerFailure("Unable to create customer reservation.", error);
+          throw new Error(getSafeReservationError(error.message));
+        }
+      } else {
+        const parsedReservation = reservationResultSchema.omit({
+          payment_method: true,
+          payment_status: true,
+        }).safeParse(reservation);
+        if (!parsedReservation.success) throw new Error("The reservation response was invalid.");
+        existingReservation = {
+          ...parsedReservation.data,
+          customer_name: data.customer_name,
+          contact_number: data.contact_number,
+          pickup_date: data.pickup_date,
+          pickup_time: data.pickup_time,
+        };
+      }
+    }
+
+    const { data: payment, error: paymentError } = await supabaseAdmin.rpc(
+      "record_reservation_payment_submission",
+      {
+        p_reservation_id: existingReservation.id,
+        p_payment_method: data.payment_method,
+        p_transaction_reference: data.payment_method === "gcash"
+          ? data.transaction_reference?.trim() || null
+          : null,
+        p_screenshot_path: data.payment_method === "gcash"
+          ? data.payment_screenshot_path!
+          : null,
+      },
+    );
+    if (paymentError) {
+      reportServerFailure("Unable to record reservation payment submission.", paymentError);
+      throw new Error(paymentError.message.includes("already exists")
+        ? "A payment submission already exists for this reservation."
+        : "The reservation was saved, but its payment could not be recorded. Retry the submission.");
+    }
+    const parsedPayment = z.object({
+      payment_method: z.enum(["cash", "gcash"]),
+      payment_status: z.enum(["awaiting_payment", "awaiting_verification", "paid", "rejected"]),
+    }).safeParse(payment);
+    if (!parsedPayment.success) {
+      reportServerFailure("Reservation payment response was invalid.", parsedPayment.error);
+      throw new Error("The reservation payment could not be verified.");
+    }
+    const result = reservationResultSchema.safeParse({
+      ...existingReservation,
+      ...parsedPayment.data,
+    });
     if (!result.success) throw new Error("The reservation response was invalid.");
     return result.data;
   });
@@ -286,6 +499,15 @@ async function removeRejectedPhoto(path: string, reason: string): Promise<never>
   const { error } = await supabaseAdmin.storage.from(PHOTO_BUCKET).remove([path]);
   if (error) {
     reportServerFailure("Unable to remove rejected customer photo.", error);
+    throw new Error(`${reason} We couldn't remove the invalid upload; please contact the shop.`);
+  }
+  throw new Error(reason);
+}
+
+async function removeRejectedPaymentScreenshot(path: string, reason: string): Promise<never> {
+  const { error } = await supabaseAdmin.storage.from(PAYMENT_BUCKET).remove([path]);
+  if (error) {
+    reportServerFailure("Unable to remove rejected GCash screenshot.", error);
     throw new Error(`${reason} We couldn't remove the invalid upload; please contact the shop.`);
   }
   throw new Error(reason);
@@ -320,12 +542,24 @@ export const listCustomerReservations = createServerFn({ method: "GET" })
       reportServerFailure("Unable to retrieve reservation sale links.", salesError);
       throw new Error("Reservation sale information could not be loaded.");
     }
+    const { data: payments, error: paymentsError } = await supabaseAdmin
+      .from("reservation_payments")
+      .select("reservation_id, payment_method, payment_status, transaction_reference, rejection_reason, verified_at")
+      .in("reservation_id", reservations.map((reservation) => reservation.id));
+    if (paymentsError) {
+      reportServerFailure("Unable to retrieve reservation payment information.", paymentsError);
+      throw new Error("Reservation payment information could not be loaded.");
+    }
     const saleByReservation = new Map(
       (sales ?? []).map((sale) => [sale.reservation_id, sale]),
+    );
+    const paymentByReservation = new Map(
+      (payments ?? []).map((payment) => [payment.reservation_id, payment]),
     );
     return (reservations ?? []).map((reservation) => ({
       ...reservation,
       sale: saleByReservation.get(reservation.id) ?? null,
+      payment: paymentByReservation.get(reservation.id) ?? null,
     }));
   });
 
@@ -368,11 +602,92 @@ export const getCustomerReservation = createServerFn({ method: "GET" })
       throw new Error("Reservation sale information could not be loaded.");
     }
 
+    const { data: payment, error: paymentError } = await supabaseAdmin
+      .from("reservation_payments")
+      .select("reservation_id, payment_method, payment_status, transaction_reference, screenshot_path, rejection_reason, verified_by, verified_at, created_at, updated_at")
+      .eq("reservation_id", data.reservation_id)
+      .maybeSingle();
+    if (paymentError) {
+      reportServerFailure("Unable to retrieve reservation payment information.", paymentError);
+      throw new Error("Reservation payment information could not be loaded.");
+    }
+
+    const { data: paymentEvents, error: paymentEventsError } = await supabaseAdmin
+      .from("reservation_payment_events")
+      .select("id, payment_method, payment_status, transaction_reference, rejection_reason, changed_by_role, created_at")
+      .eq("reservation_id", data.reservation_id)
+      .order("created_at", { ascending: true });
+    if (paymentEventsError) {
+      reportServerFailure("Unable to retrieve reservation payment history.", paymentEventsError);
+      throw new Error("Reservation payment history could not be loaded.");
+    }
+
     return {
       ...reservation,
       items: items ?? [],
       sale: sale ?? null,
+      payment: payment ? { ...payment, history: paymentEvents ?? [] } : null,
     };
+  });
+
+export const verifyCustomerReservationPayment = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((data) =>
+    z.object({
+      reservation_id: z.string().uuid(),
+      action: z.enum(["confirm_gcash", "reject_gcash", "mark_cash_paid"]),
+      reason: z.string().trim().max(500).optional(),
+    }).superRefine((data, context) => {
+      if (data.action === "reject_gcash" && !data.reason) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["reason"],
+          message: "A rejection reason is required.",
+        });
+      }
+    }).parse(data),
+  )
+  .handler(async ({ context, data }) => {
+    await authorizeReservationAdmin(context.userId);
+    const { data: payment, error } = await supabaseAdmin.rpc("verify_reservation_payment", {
+      p_reservation_id: data.reservation_id,
+      p_actor_user_id: context.userId,
+      p_action: data.action,
+      p_reason: data.reason ?? null,
+    });
+    if (error) {
+      reportServerFailure("Unable to update reservation payment.", error);
+      if (error.message.includes("not awaiting") || error.message.includes("not awaiting payment")) {
+        throw new Error("This payment has already been reviewed. Refresh the reservation.");
+      }
+      throw new Error("The payment could not be updated. Refresh and try again.");
+    }
+    return payment;
+  });
+
+export const createReservationPaymentEvidenceReadUrl = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((data) => z.object({ reservation_id: z.string().uuid() }).parse(data))
+  .handler(async ({ context, data }) => {
+    await authorizeReservationAdmin(context.userId);
+    const { data: payment, error } = await supabaseAdmin
+      .from("reservation_payments")
+      .select("screenshot_path")
+      .eq("reservation_id", data.reservation_id)
+      .single();
+    if (error) {
+      reportServerFailure("Unable to retrieve payment evidence reference.", error);
+      throw new Error("The payment screenshot could not be loaded.");
+    }
+    if (!payment.screenshot_path) throw new Error("No GCash screenshot is attached to this reservation.");
+    const { data: signedEvidence, error: signedEvidenceError } = await supabaseAdmin.storage
+      .from(PAYMENT_BUCKET)
+      .createSignedUrl(payment.screenshot_path, 60);
+    if (signedEvidenceError) {
+      reportServerFailure("Unable to create payment evidence URL.", signedEvidenceError);
+      throw new Error("The payment screenshot could not be opened.");
+    }
+    return { signed_url: signedEvidence.signedUrl };
   });
 
 export const completeCustomerReservation = createServerFn({ method: "POST" })
@@ -422,6 +737,8 @@ export const completeCustomerReservation = createServerFn({ method: "POST" })
           "This reservation has already been processed. Refresh to see its sale.",
         "Reservation has no items":
           "This reservation has no items to process.",
+        "Reservation payment must be verified before completion":
+          "Verify or record payment before completing this reservation.",
         "Reservation not found": "This reservation could not be found.",
       };
       const safeMessage = safeErrors[checkoutError.message];
