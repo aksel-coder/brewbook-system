@@ -30,6 +30,7 @@ export function CustomerReviews() {
   const submitReviewFn = useServerFn(submitCustomerReview);
   const [reservationNumber, setReservationNumber] = useState("");
   const [contactNumber, setContactNumber] = useState("");
+  const [contactNumberTouched, setContactNumberTouched] = useState(false);
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState("");
   const [submitted, setSubmitted] = useState(false);
@@ -55,6 +56,7 @@ export function CustomerReviews() {
     onSuccess: () => {
       setReservationNumber("");
       setContactNumber("");
+      setContactNumberTouched(false);
       setRating(0);
       setComment("");
       setSubmitted(true);
@@ -64,9 +66,12 @@ export function CustomerReviews() {
     reviews.length > 0
       ? reviews.reduce((sum, review) => sum + review.rating, 0) / reviews.length
       : 0;
+  const validContactNumber = /^\d{11}$/.test(contactNumber);
 
   const submitReview = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    setContactNumberTouched(true);
+    if (!validContactNumber || !reservationNumber.trim() || rating === 0) return;
     setSubmitted(false);
     submitMutation.mutate();
   };
@@ -175,14 +180,32 @@ export function CustomerReviews() {
               <label className="block space-y-1.5 text-sm">
                 <span className="font-medium">Reservation contact number</span>
                 <Input
+                  id="review-contact-number"
                   type="tel"
                   autoComplete="tel"
-                  maxLength={20}
+                  inputMode="numeric"
+                  maxLength={11}
+                  pattern="[0-9]{11}"
+                  title="Contact number must be exactly 11 digits."
                   required
+                  aria-invalid={contactNumberTouched && !validContactNumber}
+                  aria-describedby="review-contact-number-error"
                   placeholder="Phone number used for the reservation"
                   value={contactNumber}
-                  onChange={(event) => setContactNumber(event.target.value)}
+                  onBlur={() => setContactNumberTouched(true)}
+                  onChange={(event) => {
+                    setContactNumber(event.target.value.replace(/\D/g, "").slice(0, 11));
+                  }}
                 />
+                {contactNumberTouched && !validContactNumber && (
+                  <span
+                    id="review-contact-number-error"
+                    role="alert"
+                    className="text-destructive"
+                  >
+                    Contact number must be exactly 11 digits.
+                  </span>
+                )}
               </label>
               <fieldset className="space-y-2">
                 <legend className="text-sm font-medium">Your rating</legend>
@@ -237,7 +260,12 @@ export function CustomerReviews() {
               <Button
                 type="submit"
                 className="w-full"
-                disabled={rating === 0 || submitMutation.isPending}
+                disabled={
+                  !validContactNumber ||
+                  !reservationNumber.trim() ||
+                  rating === 0 ||
+                  submitMutation.isPending
+                }
               >
                 {submitMutation.isPending ? "Submitting review..." : "Submit review"}
               </Button>

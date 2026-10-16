@@ -414,6 +414,11 @@ export function CustomerPage() {
 
   const continueToReservationReview = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!/^\d{11}$/.test(contactNumber)) {
+      setContactNumberTouched(true);
+      setContactNumberError("Contact number must be exactly 11 digits.");
+      return;
+    }
     if (!event.currentTarget.reportValidity()) return;
     const normalizedFirstName = firstName.trim();
     const normalizedLastName = lastName.trim();
@@ -440,6 +445,12 @@ export function CustomerPage() {
 
   const submitReservation = async () => {
     if (isSubmittingReservationRef.current) return;
+    if (!/^\d{11}$/.test(contactNumber)) {
+      setContactNumberTouched(true);
+      setContactNumberError("Contact number must be exactly 11 digits.");
+      setReservationError("Contact number must be exactly 11 digits.");
+      return;
+    }
     const contentType = customerPhoto ? getCustomerPhotoContentType(customerPhoto) : null;
     if (!customerPhoto || !contentType) {
       setPhotoError("Take a customer photo before continuing.");
@@ -561,6 +572,8 @@ export function CustomerPage() {
       setLastName("");
       setNameError("");
       setContactNumber("");
+      setContactNumberError("");
+      setContactNumberTouched(false);
       setPickupDate("");
       setPickupTime("");
       setNotes("");
@@ -1059,6 +1072,7 @@ export function CustomerPage() {
                         type="button"
                         disabled={
                           isSubmittingReservation ||
+                          !/^\d{11}$/.test(contactNumber) ||
                           (paymentMethod === "gcash" && !paymentScreenshot)
                         }
                         onClick={submitReservation}
@@ -1144,9 +1158,11 @@ export function CustomerPage() {
                           Contact Number <span className="text-destructive">*</span>
                         </span>
                         <Input
+                          id="reservation-contact-number"
                           type="tel"
                           autoComplete="tel"
                           inputMode="numeric"
+                          name="contact_number"
                           required
                           maxLength={11}
                           pattern="[0-9]{11}"

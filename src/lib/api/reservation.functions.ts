@@ -19,7 +19,7 @@ const photoTypeByExtension = {
 
 const reservationSchema = z.object({
   customer_name: z.string().trim().min(1).max(120),
-  contact_number: z.string().regex(/^\d{11}$/, "Contact number must be exactly 11 digits."),
+  contact_number: z.string().regex(/^[0-9]{11}$/, "Contact number must be exactly 11 digits."),
   pickup_date: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)

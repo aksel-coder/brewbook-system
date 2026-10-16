@@ -556,6 +556,7 @@ export type Database = {
         Row: {
           id: string;
           reservation_id: string | null;
+          operator_name: string;
           receipt_number: string;
           sale_date: string;
           subtotal: number;
@@ -565,6 +566,7 @@ export type Database = {
         };
         Insert: {
           id?: string;
+          operator_name?: string;
           reservation_id?: string | null;
           receipt_number: string;
           sale_date?: string;
@@ -575,6 +577,7 @@ export type Database = {
         };
         Update: {
           id?: string;
+          operator_name?: string;
           reservation_id?: string | null;
           receipt_number?: string;
           sale_date?: string;
@@ -635,10 +638,6 @@ export type Database = {
       sync_admin_offline_sale: {
         Args: { p_id: string; p_items: Json };
         Returns: Json;
-      };
-      admin_delete_user: {
-        Args: { target_user_id: string };
-        Returns: undefined;
       };
       claim_first_admin: {
         Args: Record<PropertyKey, never>;

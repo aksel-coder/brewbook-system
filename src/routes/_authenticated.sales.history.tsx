@@ -55,10 +55,11 @@ function History() {
   const handlePrint = () => {
     printTable(
       "Sales History",
-      ["Receipt", "Date", "Items", "Total"],
+      ["Receipt", "Date", "Processed by", "Items", "Total"],
       filtered.map((s: any) => [
         `${s.receipt_number}${s.reservation?.reservation_number ? ` · Reservation ${s.reservation.reservation_number}` : ""}`,
         new Date(s.sale_date).toLocaleString(),
+        s.operator_name || "Unknown staff",
         (s.sale_items ?? [])
           .map(
             (i: any) =>
@@ -124,7 +125,12 @@ function History() {
                         </div>
                       )}
                     </TableCell>
-                    <TableCell>{new Date(s.sale_date).toLocaleString()}</TableCell>
+                    <TableCell>
+                      <div>{new Date(s.sale_date).toLocaleString()}</div>
+                      <div className="text-xs text-muted-foreground">
+                        Staff: {s.operator_name || "Unknown staff"}
+                      </div>
+                    </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
                       {(s.sale_items ?? [])
                         .map(

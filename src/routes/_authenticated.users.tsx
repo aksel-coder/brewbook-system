@@ -42,6 +42,11 @@ function Users() {
   });
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: () => fetchRole() });
   const isAdmin = !!me?.isAdmin;
+  const adminCount = new Set(
+    (data as Array<{ id: string; roles: string[] }>)
+      .filter((user) => user.roles.includes("admin"))
+      .map((user) => user.id),
+  ).size;
   const { paginatedItems, ...pagination } = usePagination(data as any[]);
   console.log('data: ', paginatedItems)
   // useEffect(() => {
@@ -88,12 +93,11 @@ function Users() {
   const remove = async (user_id: string) => {
     try {
       await delFn({ data: { user_id } });
-      toast.success("User deleted");
+      toast.success("Account permanently deleted. Sales history has been preserved.");
       qc.invalidateQueries({ queryKey: ["users"] });
     }
-    catch (e: any) { 
-      // toast.error(e.message); 
-      console.log('errorrrrrr', e.message)
+    catch (e: any) {
+      toast.error(e.message || "The account could not be permanently deleted.");
     }
   };
 
@@ -146,10 +150,40 @@ function Users() {
                     <TableCell className="text-sm text-muted-foreground">{new Date(u.created_at).toLocaleDateString()}</TableCell>
                     <TableCell className="text-right">
                       <AlertDialog>
-                        <AlertDialogTrigger asChild><Button size="icon" variant="ghost" className="text-destructive"><Trash2 className="h-4 w-4" /></Button></AlertDialogTrigger>
+                        <AlertDialogTrigger asChild>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="text-destructive"
+                            disabled={u.id === me?.userId || (u.roles.includes("admin") && adminCount <= 1)}
+                            title={
+                              u.id === me?.userId
+                                ? "You cannot permanently delete your own account."
+                                : u.roles.includes("admin")
+                                  ? adminCount <= 1
+                                    ? "The last authorized Admin account cannot be deleted."
+                                    : "Permanently delete administrator account"
+                                  : "Permanently delete staff account"
+                            }
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </AlertDialogTrigger>
                         <AlertDialogContent>
-                          <AlertDialogHeader><AlertDialogTitle>Delete {u.email}?</AlertDialogTitle><AlertDialogDescription>This permanently removes the user account.</AlertDialogDescription></AlertDialogHeader>
-                          <AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={() => remove(u.id)}>Delete</AlertDialogAction></AlertDialogFooter>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Permanently delete {u.email}?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              This permanently removes the account and its login access. Previous
+                              sales, sale items, reports, and the staff identity recorded with each
+                              sale will remain unchanged.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction onClick={() => remove(u.id)}>
+                              Permanently delete account
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
                         </AlertDialogContent>
                       </AlertDialog>
                     </TableCell>

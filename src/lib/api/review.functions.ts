@@ -13,7 +13,7 @@ const publicReviewSchema = z.object({
 
 const submitReviewSchema = z.object({
   reservation_number: z.string().trim().min(1).max(30),
-  contact_number: z.string().trim().min(7).max(20).regex(/^[0-9+() .-]+$/),
+  contact_number: z.string().regex(/^[0-9]{11}$/, "Contact number must be exactly 11 digits."),
   rating: z.number().int().min(1).max(5),
   comment: z.string().trim().max(1000).optional(),
 });
@@ -83,6 +83,7 @@ export const submitCustomerReview = createServerFn({ method: "POST" })
     });
     if (error) {
       const knownErrors = [
+        "Contact number must be exactly 11 digits.",
         "A completed reservation with that reservation number and contact number was not found",
         "A review has already been submitted for this reservation",
         "Enter a valid reservation number, contact number, rating, and comment",

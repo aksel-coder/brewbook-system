@@ -58,9 +58,13 @@ function LoginPage() {
         to: (role.isAdmin ? safeRedirect(search.redirect) : cashierRedirect(search.redirect)) as any,
         replace: true,
       });
-    } catch {
+    } catch (error) {
+      const rawMessage = error instanceof Error ? error.message : "";
       const message =
-        "You are signed in, but your account role could not be verified. Retry the check or contact an administrator.";
+        /fetch failed|failed to fetch|networkerror|timeout|temporarily unavailable/i.test(rawMessage)
+          ? "A temporary connection problem prevented account verification. Please retry."
+          : rawMessage ||
+            "Your account role could not be verified. Retry the check or contact an administrator.";
       setVerificationError(message);
       toast.error(message);
     }
