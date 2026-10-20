@@ -204,7 +204,7 @@ function Inventory() {
                     ? "Out of Stock"
                     : remainingStock <= threshold
                       ? "Low Stock"
-                      : "In Stock";
+                      : "Available";
                 return (
                   <TableRow key={item.id}>
                     <TableCell className="font-medium">{item.name}</TableCell>
