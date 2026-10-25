@@ -23,7 +23,6 @@ import { Plus, Minus, Trash2, Search, Printer, X, ImageIcon } from "lucide-react
 import { toast } from "sonner";
 import { useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import logo from "@/assets/coffee-zone-logo.jpg.asset.json";
 
 function ProductImage({ path, className }: { path?: string | null; className?: string }) {
   const [url, setUrl] = useState<string | null>(null);
@@ -387,7 +386,11 @@ function SalesPOS() {
             <>
               <div className="bg-white p-4 text-black">
                 <div className="flex flex-col items-center text-center">
-                  <img src={'/coffeLogo.jpg'} className="h-16 w-16 rounded-full" alt="logo" />
+                  <img
+                    src="/coffee-zone-logo.png"
+                    className="h-16 w-16 rounded-full object-contain"
+                    alt="logo"
+                  />
                   <div className="mt-2 font-display text-xl font-bold">COFFEE ZONE</div>
                   <div className="text-xs">Start your day right</div>
                 </div>
@@ -424,7 +427,11 @@ function SalesPOS() {
       {receipt && (
         <div id="printable-receipt-area" className="hidden print:block bg-white p-4 text-black">
           <div className="flex flex-col items-center text-center">
-            <img src={'/coffeLogo.jpg'} className="h-16 w-16 rounded-full" alt="logo" />
+            <img
+              src="/coffee-zone-logo.png"
+              className="h-16 w-16 rounded-full object-contain"
+              alt="logo"
+            />
             <div className="mt-2 font-display text-xl font-bold">COFFEE ZONE</div>
             <div className="text-xs">Start your day right</div>
           </div>

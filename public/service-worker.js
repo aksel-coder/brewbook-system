@@ -1,5 +1,5 @@
-const CACHE_NAME = "coffee-zone-static-v2";
-const APP_SHELL = ["/", "/coffeLogo.jpg"];
+const CACHE_NAME = "coffee-zone-static-v3";
+const APP_SHELL = ["/", "/coffee-zone-logo.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)));

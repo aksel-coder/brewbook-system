@@ -24,7 +24,6 @@ import {
   SidebarHeader,
   SidebarFooter,
 } from "@/components/ui/sidebar";
-import logo from "@/assets/coffee-zone-logo.jpg.asset.json";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
@@ -60,9 +59,9 @@ export function AppSidebar({ isAdmin }: { isAdmin: boolean }) {
       <SidebarHeader className="border-b border-sidebar-border">
         <div className="flex items-center gap-3 px-2 py-3">
           <img
-            src="/coffeLogo.jpg"
+            src="/coffee-zone-logo.png"
             alt="Coffee Zone"
-            className="h-10 w-10 rounded-full bg-white object-cover"
+            className="h-10 w-10 rounded-full bg-white object-contain"
           />
           <div className="group-data-[collapsible=icon]:hidden">
             <div className="font-display text-lg font-bold leading-tight text-sidebar-foreground">

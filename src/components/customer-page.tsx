@@ -713,9 +713,9 @@ export function CustomerPage() {
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-3 px-4 sm:px-6">
           <a href="/customer" className="flex min-w-0 items-center gap-2.5">
             <img
-              src="/coffeLogo.jpg"
+              src="/coffee-zone-logo.png"
               alt="Coffee Zone"
-              className="h-10 w-10 rounded-full bg-white object-cover"
+              className="h-10 w-10 rounded-full bg-white object-contain"
             />
             <span className="truncate font-display text-lg font-bold">Coffee Zone</span>
           </a>
