@@ -12,7 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DataTablePagination } from "@/components/data-table-pagination";
 import { usePagination } from "@/hooks/use-pagination";
-import { printTable } from "@/lib/print";
+import { loadCoffeeZoneLogoDataUrl, printTable } from "@/lib/print";
 import { Download, FileText, Printer, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
@@ -75,9 +75,18 @@ async function downloadPDF(title: string, head: string[], body: (string | number
     import("jspdf-autotable"),
   ]);
   const doc = new jsPDF();
-  doc.setFontSize(16); doc.text("Coffee Zone — " + title, 14, 18);
-  doc.setFontSize(10); doc.text(new Date().toLocaleString(), 14, 25);
-  autoTable(doc, { head: [head], body: body as any, startY: 30, theme: "striped", headStyles: { fillColor: [111, 78, 55] } });
+  const logo = await loadCoffeeZoneLogoDataUrl();
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const margin = 14;
+  const logoSize = 20;
+  doc.setFontSize(16);
+  doc.text("COFFEE ZONE", margin, 16);
+  doc.setFontSize(12);
+  doc.text(title, margin, 23, { maxWidth: pageWidth - margin * 2 - logoSize - 6 });
+  doc.setFontSize(9);
+  doc.text(new Date().toLocaleString(), margin, 29);
+  doc.addImage(logo, "PNG", pageWidth - margin - logoSize, 8, logoSize, logoSize);
+  autoTable(doc, { head: [head], body: body as any, startY: 36, theme: "striped", headStyles: { fillColor: [111, 78, 55] } });
   doc.save(`${title.replace(/\s+/g, "_")}.pdf`);
 }
 
@@ -395,8 +404,8 @@ function Reports() {
             <CardHeader className="flex-row items-center justify-between">
               <CardTitle className="font-display">Low Stock Report</CardTitle>
               <div className="flex flex-wrap gap-2">
-                <Button variant="outline" size="sm" onClick={() => printTable("Low Stock", ["Product", "Stock", "Threshold", "Type"], lowStock.map(p => [p.name, Math.max(0, Number(p.stock_quantity ?? 0)), Number(p.low_stock_threshold ?? 0), p.kind === "ingredient" ? "Raw Ingredient" : "Finished Good"]))}><Printer className="mr-1 h-4 w-4" /> Print</Button>
-                <Button variant="outline" size="sm" onClick={() => downloadCSV("low_stock.csv", [["Product", "Stock", "Threshold", "Type"], ...lowStock.map(p => [p.name, Math.max(0, Number(p.stock_quantity ?? 0)), Number(p.low_stock_threshold ?? 0), p.kind === "ingredient" ? "Raw Ingredient" : "Finished Good"])])}><Download className="mr-1 h-4 w-4" /> CSV</Button>
+                <Button variant="outline" size="sm" onClick={() => printTable("Low Stock", ["Product", "Stock", "Threshold", "Type"], lowStock.map(p => [p.name, Math.max(0, Number(p.stock_quantity ?? 0)), Number(p.low_stock_threshold ?? 0), p.category ?? "Finished Good"]))}><Printer className="mr-1 h-4 w-4" /> Print</Button>
+                <Button variant="outline" size="sm" onClick={() => downloadCSV("low_stock.csv", [["Product", "Stock", "Threshold", "Type"], ...lowStock.map(p => [p.name, Math.max(0, Number(p.stock_quantity ?? 0)), Number(p.low_stock_threshold ?? 0), p.category ?? "Finished Good"])])}><Download className="mr-1 h-4 w-4" /> CSV</Button>
               </div>
             </CardHeader>
             <CardContent>
@@ -410,7 +419,7 @@ function Reports() {
                       <TableCell>{p.name}</TableCell>
                       <TableCell className="text-right">{Math.max(0, Number(p.stock_quantity ?? 0))}</TableCell>
                       <TableCell className="text-right">{Number(p.low_stock_threshold ?? 0)}</TableCell>
-                      <TableCell>{p.kind === "ingredient" ? "Raw Ingredient" : "Finished Good"}</TableCell>
+                      <TableCell>{p.category ?? "Finished Good"}</TableCell>
                     </>
                   )}
                 />}

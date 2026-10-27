@@ -23,6 +23,7 @@ import { Plus, Minus, Trash2, Search, Printer, X, ImageIcon } from "lucide-react
 import { toast } from "sonner";
 import { useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { escapeHtml, printHtmlDocument } from "@/lib/print";
 
 function ProductImage({ path, className }: { path?: string | null; className?: string }) {
   const [url, setUrl] = useState<string | null>(null);
@@ -194,6 +195,87 @@ function SalesPOS() {
       }
     }
     finally { setBusy(false); }
+  };
+
+  const printReceipt = async () => {
+    try {
+      const logoUrl = new URL("/coffee-zone-logo.png", window.location.href).href;
+      const items = (receipt.items as CartItem[])
+        .map((item) => {
+          const itemName = `${escapeHtml(item.name)}${item.variant_name ? ` <span class="variant">${escapeHtml(item.variant_name)}</span>` : ""}`;
+          return `<tr>
+            <td class="item">${itemName}</td>
+            <td class="quantity">${item.quantity}</td>
+            <td class="price">${peso(item.price)}</td>
+            <td class="amount">${peso(item.price * item.quantity)}</td>
+          </tr>`;
+        })
+        .join("");
+      const date = escapeHtml(new Date(receipt.ts).toLocaleString());
+      const pendingSync = receipt.offline
+        ? '<p class="pending-sync">Pending Sync</p>'
+        : "";
+      const html = `<!doctype html>
+        <html>
+          <head>
+            <meta charset="utf-8" />
+            <title>Receipt ${escapeHtml(receipt.sale.receipt_number)}</title>
+            <style>
+              @page { margin: 0; }
+              * { box-sizing: border-box; }
+              html, body { margin: 0; padding: 0; width: 80mm; }
+              body { color: #000; background: #fff; font-family: Arial, sans-serif; font-size: 10px; }
+              .receipt { width: 80mm; padding: 3mm; }
+              .header { display: flex; align-items: center; justify-content: space-between; gap: 3mm; margin-bottom: 3mm; break-inside: avoid; page-break-inside: avoid; }
+              .branding { min-width: 0; }
+              .business-name { font-size: 15px; line-height: 1.15; font-weight: 700; }
+              .tagline { margin-top: 1mm; font-size: 9px; }
+              .logo { display: block; flex: 0 0 16mm; width: 16mm; height: 16mm; object-fit: contain; }
+              .receipt-meta { padding: 2mm 0; border-top: 1px dashed #555; border-bottom: 1px dashed #555; text-align: center; line-height: 1.4; overflow-wrap: anywhere; break-inside: avoid; page-break-inside: avoid; }
+              .pending-sync { margin: 1mm 0 0; font-weight: 700; }
+              table { width: 100%; margin-top: 2mm; border-collapse: collapse; table-layout: fixed; }
+              thead { display: table-header-group; }
+              th { padding: 1mm 0; border-bottom: 1px solid #777; font-size: 9px; text-align: left; }
+              td { padding: 1.5mm 0; vertical-align: top; }
+              tr { break-inside: avoid; page-break-inside: avoid; }
+              .item { width: 43%; overflow-wrap: anywhere; }
+              .variant { display: block; font-size: 9px; }
+              .quantity { width: 10%; text-align: center; }
+              .price, .amount { width: 23.5%; text-align: right; white-space: nowrap; }
+              .total { display: flex; justify-content: space-between; gap: 3mm; margin-top: 2mm; padding-top: 2mm; border-top: 1px dashed #555; font-size: 12px; font-weight: 700; break-inside: avoid; page-break-inside: avoid; }
+              .closing { margin-top: 3mm; text-align: center; break-inside: avoid; page-break-inside: avoid; }
+              @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+            </style>
+          </head>
+          <body>
+            <main class="receipt">
+              <header class="header">
+                <div class="branding">
+                  <div class="business-name">COFFEE ZONE</div>
+                  <div class="tagline">Start your day right</div>
+                </div>
+                <img class="logo" src="${escapeHtml(logoUrl)}" alt="Coffee Zone logo" />
+              </header>
+              <section class="receipt-meta">
+                <div>Receipt: ${escapeHtml(receipt.sale.receipt_number)}</div>
+                <div>${date}</div>
+                ${pendingSync}
+              </section>
+              <table>
+                <thead><tr><th>Item</th><th class="quantity">Qty</th><th class="price">Price</th><th class="amount">Amount</th></tr></thead>
+                <tbody>${items}</tbody>
+              </table>
+              <footer class="closing">
+                <div class="total"><span>TOTAL</span><span>${peso(receipt.total)}</span></div>
+                <div style="margin-top: 3mm">Thank you!</div>
+              </footer>
+            </main>
+          </body>
+        </html>`;
+      await printHtmlDocument(`Receipt ${receipt.sale.receipt_number}`, html);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "The receipt could not be printed.");
+    }
   };
 
   const finishOfflineCheckout = async () => {
@@ -385,14 +467,16 @@ function SalesPOS() {
           {receipt && (
             <>
               <div className="bg-white p-4 text-black">
-                <div className="flex flex-col items-center text-center">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0 text-left">
+                    <div className="font-display text-xl font-bold">COFFEE ZONE</div>
+                    <div className="text-xs">Start your day right</div>
+                  </div>
                   <img
                     src="/coffee-zone-logo.png"
-                    className="h-16 w-16 rounded-full object-contain"
-                    alt="logo"
+                    className="h-12 w-12 shrink-0 rounded-full object-contain"
+                    alt="Coffee Zone logo"
                   />
-                  <div className="mt-2 font-display text-xl font-bold">COFFEE ZONE</div>
-                  <div className="text-xs">Start your day right</div>
                 </div>
                 <div className="my-3 border-y border-dashed py-2 text-center text-xs">
                   <div>{receipt.sale.receipt_number}</div>
@@ -417,45 +501,13 @@ function SalesPOS() {
               </div>
               <div className="no-print mt-3 flex gap-2">
                 <Button variant="outline" className="flex-1" onClick={() => setReceipt(null)}><X className="mr-1 h-4 w-4" /> Close</Button>
-                <Button className="flex-1" onClick={() => window.print()}><Printer className="mr-1 h-4 w-4" /> Print</Button>
+                <Button className="flex-1" onClick={() => void printReceipt()}><Printer className="mr-1 h-4 w-4" /> Print</Button>
               </div>
             </>
           )}
         </DialogContent>
       </Dialog>
 
-      {receipt && (
-        <div id="printable-receipt-area" className="hidden print:block bg-white p-4 text-black">
-          <div className="flex flex-col items-center text-center">
-            <img
-              src="/coffee-zone-logo.png"
-              className="h-16 w-16 rounded-full object-contain"
-              alt="logo"
-            />
-            <div className="mt-2 font-display text-xl font-bold">COFFEE ZONE</div>
-            <div className="text-xs">Start your day right</div>
-          </div>
-          <div className="my-3 border-y border-dashed py-2 text-center text-xs">
-            <div>{receipt.sale.receipt_number}</div>
-            <div>{new Date(receipt.ts).toLocaleString()}</div>
-            {receipt.offline && <div className="font-semibold text-amber-700">Pending Sync</div>}
-          </div>
-          <table className="w-full text-xs">
-            <tbody>
-              {receipt.items.map((i: CartItem) => (
-                <tr key={`${i.product_id}-${i.variant_id ?? "default"}`}>
-                  <td>{i.quantity}× {i.name}{i.variant_name ? ` (${i.variant_name})` : ""}</td>
-                  <td className="text-right">{peso(i.price * i.quantity)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <div className="mt-3 space-y-0.5 border-t border-dashed pt-2 text-xs">
-            <div className="flex justify-between font-bold"><span>TOTAL</span><span>{peso(receipt.total)}</span></div>
-          </div>
-          <div className="mt-3 text-center text-xs">Thank you! ☕</div>
-        </div>
-      )}
       </>}
     </div>
   );

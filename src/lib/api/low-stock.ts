@@ -37,8 +37,8 @@ export const getLowStockInventory = ({
         stock_quantity: remainingStock,
         low_stock_threshold: threshold,
         kind: "ingredient",
-        category: "Raw Ingredient",
-        inventory_type: "ingredient",
+        category: item?.item_type ?? "Ingredients",
+        inventory_type: item?.item_type ?? "Ingredients",
       });
     }
   }

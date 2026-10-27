@@ -36,6 +36,7 @@ import {
 } from "@/components/ui/table";
 import { usePagination } from "@/hooks/use-pagination";
 import {
+  cancelCustomerReservation,
   completeCustomerReservation,
   createCustomerPhotoReadUrl,
   createReservationPaymentEvidenceReadUrl,
@@ -73,13 +74,16 @@ function formatDateTime(value: string) {
 
 function normalizeReservationStatus(status: string | null | undefined) {
   const normalized = status?.trim().toLocaleUpperCase();
-  return normalized === "PENDING" || normalized === "COMPLETED" ? normalized : null;
+  return normalized === "PENDING" || normalized === "COMPLETED" || normalized === "CANCELED"
+    ? normalized
+    : null;
 }
 
 function displayReservationStatus(status: string | null | undefined) {
   const normalized = normalizeReservationStatus(status);
   if (normalized === "PENDING") return "Pending";
   if (normalized === "COMPLETED") return "Completed";
+  if (normalized === "CANCELED") return "Canceled";
   return status?.trim() || "Unknown";
 }
 
@@ -91,6 +95,7 @@ function Reservations() {
   const photoFn = useServerFn(createCustomerPhotoReadUrl);
   const paymentEvidenceFn = useServerFn(createReservationPaymentEvidenceReadUrl);
   const completeFn = useServerFn(completeCustomerReservation);
+  const cancelFn = useServerFn(cancelCustomerReservation);
   const verifyPaymentFn = useServerFn(verifyCustomerReservationPayment);
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -98,7 +103,12 @@ function Reservations() {
     reservationId: string;
     reservationNumber: string;
   } | null>(null);
+  const [pendingCancellation, setPendingCancellation] = useState<{
+    reservationId: string;
+    reservationNumber: string;
+  } | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
   const [isUpdatingPayment, setIsUpdatingPayment] = useState(false);
   const [rejectingReservation, setRejectingReservation] = useState<{
     reservationId: string;
@@ -208,6 +218,30 @@ function Reservations() {
       );
     } finally {
       setIsUpdating(false);
+    }
+  };
+
+  const cancelReservation = async () => {
+    if (!pendingCancellation) return;
+    setIsCancelling(true);
+    try {
+      const result = await cancelFn({
+        data: { reservation_id: pendingCancellation.reservationId },
+      });
+      toast.success(`${result.reservation_number} canceled successfully.`);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["customer-reservations"] }),
+        queryClient.invalidateQueries({
+          queryKey: ["customer-reservation", pendingCancellation.reservationId],
+        }),
+      ]);
+      setPendingCancellation(null);
+    } catch (cause) {
+      toast.error(
+        cause instanceof Error ? cause.message : "The reservation could not be canceled.",
+      );
+    } finally {
+      setIsCancelling(false);
     }
   };
 
@@ -393,13 +427,29 @@ function Reservations() {
                         {formatDateTime(reservation.created_at)}
                       </TableCell>
                       <TableCell className="text-right">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => setSelectedId(reservation.id)}
-                        >
-                          <Eye className="mr-1 h-4 w-4" /> View
-                        </Button>
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setSelectedId(reservation.id)}
+                          >
+                            <Eye className="mr-1 h-4 w-4" /> View
+                          </Button>
+                          {normalizeReservationStatus(reservation.status) === "PENDING" && (
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              onClick={() =>
+                                setPendingCancellation({
+                                  reservationId: reservation.id,
+                                  reservationNumber: reservation.reservation_number,
+                                })
+                              }
+                            >
+                              Cancel
+                            </Button>
+                          )}
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))
@@ -479,6 +529,34 @@ function Reservations() {
               }}
             >
               {isUpdating ? "Processing…" : "Create sale"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={pendingCancellation !== null}
+        onOpenChange={(open) => !open && !isCancelling && setPendingCancellation(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Cancel this reservation?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingCancellation?.reservationNumber} will be marked Canceled and retained in
+              reservation history. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isCancelling}>Keep reservation</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={isCancelling || !pendingCancellation}
+              onClick={(event) => {
+                event.preventDefault();
+                void cancelReservation();
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isCancelling ? "Canceling…" : "Cancel reservation"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

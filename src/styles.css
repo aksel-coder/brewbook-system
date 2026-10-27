@@ -138,19 +138,3 @@
     letter-spacing: -0.01em;
   }
 }
-
-@media print {
-  body * {
-    visibility: hidden !important;
-  }
-
-  #printable-receipt-area,
-  #printable-receipt-area * {
-    visibility: visible !important;
-    color: #000000 !important;
-  }
-
-  .no-print {
-    display: none !important;
-  }
-}

@@ -1,7 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { getRequest } from "@tanstack/react-start/server";
 import { z } from "zod";
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { hasSupabaseServiceRole, supabaseAdmin } from "@/integrations/supabase/client.server";
 
 const publicReviewSchema = z.object({
@@ -16,9 +15,8 @@ const submitReviewSchema = z.object({
   contact_number: z.string().regex(/^[0-9]{11}$/, "Contact number must be exactly 11 digits."),
   rating: z.number().int().min(1).max(5),
   comment: z.string().trim().max(1000).optional(),
+  website: z.string().max(0).optional(),
 });
-
-const reviewStatusSchema = z.enum(["published", "hidden"]);
 
 function requireReviewService() {
   if (!hasSupabaseServiceRole()) {
@@ -38,20 +36,6 @@ function requireSameOriginReviewRequest() {
     }
   } catch {
     throw new Error("Review submissions must come from this site.");
-  }
-}
-
-async function requireReviewAdmin(userId: string) {
-  const { data, error } = await supabaseAdmin
-    .from("user_roles")
-    .select("role")
-    .eq("user_id", userId);
-  if (error) {
-    console.error("[customer reviews] Unable to verify Admin role.", error);
-    throw new Error("Your Admin permissions could not be verified.");
-  }
-  if (!data.some((entry) => entry.role === "admin")) {
-    throw new Error("Forbidden: Admin access is required.");
   }
 }
 
@@ -99,84 +83,9 @@ export const submitCustomerReview = createServerFn({ method: "POST" })
       !("id" in result) ||
       typeof result.id !== "string" ||
       !("status" in result) ||
-      result.status !== "pending"
+      result.status !== "published"
     ) {
       throw new Error("The review submission response was invalid.");
     }
-    return { status: "pending" as const };
-  });
-
-export const listAdminCustomerReviews = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    requireReviewService();
-    await requireReviewAdmin(context.userId);
-    const { data, error } = await supabaseAdmin
-      .from("customer_reviews")
-      .select("id, reservation_id, rating, comment, status, created_at")
-      .order("created_at", { ascending: false });
-    if (error) {
-      console.error("[customer reviews] Unable to load Admin reviews.", error);
-      throw new Error("Customer reviews could not be loaded.");
-    }
-    const reservationIds = [...new Set((data ?? []).map((review) => review.reservation_id))];
-    const { data: reservations, error: reservationError } = reservationIds.length
-      ? await supabaseAdmin
-          .from("reservations")
-          .select("id, reservation_number")
-          .in("id", reservationIds)
-      : { data: [], error: null };
-    if (reservationError) {
-      console.error("[customer reviews] Unable to load review reservation references.", reservationError);
-      throw new Error("Review reservation details could not be loaded.");
-    }
-    const reservationNumbers = new Map(
-      (reservations ?? []).map((reservation) => [reservation.id, reservation.reservation_number]),
-    );
-    return (data ?? []).map((review) => ({
-      ...review,
-      reservation_number: reservationNumbers.get(review.reservation_id) ?? "Unavailable",
-    }));
-  });
-
-export const moderateCustomerReview = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .validator((input) =>
-    z.object({ review_id: z.string().uuid(), status: reviewStatusSchema }).parse(input),
-  )
-  .handler(async ({ context, data }) => {
-    requireReviewService();
-    await requireReviewAdmin(context.userId);
-    const { data: review, error } = await supabaseAdmin
-      .from("customer_reviews")
-      .update({ status: data.status })
-      .eq("id", data.review_id)
-      .select("id")
-      .maybeSingle();
-    if (error) {
-      console.error("[customer reviews] Unable to update review visibility.", error);
-      throw new Error("The review visibility could not be updated.");
-    }
-    if (!review) throw new Error("The review could not be found.");
-    return { id: review.id, status: data.status };
-  });
-
-export const removeCustomerReview = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .validator((input) => z.object({ review_id: z.string().uuid() }).parse(input))
-  .handler(async ({ context, data }) => {
-    requireReviewService();
-    await requireReviewAdmin(context.userId);
-    const { data: review, error } = await supabaseAdmin
-      .from("customer_reviews")
-      .update({ status: "removed" })
-      .eq("id", data.review_id)
-      .select("id, status")
-      .maybeSingle();
-    if (error) {
-      console.error("[customer reviews] Unable to remove review from public display.", error);
-      throw new Error("The review could not be removed.");
-    }
-    if (!review) throw new Error("The review could not be found.");
-    return { id: review.id, status: review.status };
+    return { status: "published" as const };
   });

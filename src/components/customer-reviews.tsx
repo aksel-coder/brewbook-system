@@ -1,7 +1,8 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Star } from "lucide-react";
 import { useState, type FormEvent } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -26,6 +27,7 @@ function ReviewStars({ rating, size = "h-4 w-4" }: { rating: number; size?: stri
 }
 
 export function CustomerReviews() {
+  const queryClient = useQueryClient();
   const listReviewsFn = useServerFn(listPublicCustomerReviews);
   const submitReviewFn = useServerFn(submitCustomerReview);
   const [reservationNumber, setReservationNumber] = useState("");
@@ -33,6 +35,7 @@ export function CustomerReviews() {
   const [contactNumberTouched, setContactNumberTouched] = useState(false);
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState("");
+  const [website, setWebsite] = useState("");
   const [submitted, setSubmitted] = useState(false);
   const {
     data: reviews = [],
@@ -51,15 +54,19 @@ export function CustomerReviews() {
           contact_number: contactNumber.trim(),
           rating,
           comment: comment.trim() || undefined,
+          website,
         },
       }),
-    onSuccess: () => {
+    onSuccess: async () => {
       setReservationNumber("");
       setContactNumber("");
       setContactNumberTouched(false);
       setRating(0);
       setComment("");
+      setWebsite("");
       setSubmitted(true);
+      toast.success("Your review has been published.");
+      await queryClient.invalidateQueries({ queryKey: ["public-customer-reviews"] });
     },
   });
   const average =
@@ -207,6 +214,16 @@ export function CustomerReviews() {
                   </span>
                 )}
               </label>
+              <input
+                type="text"
+                name="website"
+                value={website}
+                onChange={(event) => setWebsite(event.target.value)}
+                tabIndex={-1}
+                autoComplete="off"
+                aria-hidden="true"
+                className="absolute -left-[9999px] h-px w-px overflow-hidden"
+              />
               <fieldset className="space-y-2">
                 <legend className="text-sm font-medium">Your rating</legend>
                 <div className="flex items-center gap-1" role="group" aria-label="Choose a rating">
@@ -254,7 +271,7 @@ export function CustomerReviews() {
               )}
               {submitted && (
                 <p role="status" className="text-sm text-primary">
-                  Thank you! Your review was sent to Admin for approval before it appears publicly.
+                  Thank you! Your review is now published in Customer Reviews.
                 </p>
               )}
               <Button

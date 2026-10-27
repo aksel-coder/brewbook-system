@@ -200,7 +200,7 @@ export const listInventoryItems = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     const { data, error } = await context.supabase
       .from("inventory_items")
-      .select("id, name, unit, initial_stock, added_stock, total_used, current_stock, low_stock_threshold, created_at")
+      .select("id, name, item_type, unit, initial_stock, added_stock, total_used, current_stock, low_stock_threshold, created_at")
       .order("name");
     if (error) throw new Error(error.message);
     return data ?? [];
@@ -211,14 +211,15 @@ export const upsertInventoryItem = createServerFn({ method: "POST" })
   .inputValidator((d) => z.object({
     id: z.string().uuid().optional(),
     name: z.string().min(1).max(120),
-    unit: z.enum(["g", "ml", "pcs", "oz"]),
+    item_type: z.enum(["Ingredients", "Materials"]),
+    unit: z.enum(["g", "ml", "l", "pcs", "oz"]),
     initial_stock: z.number().min(0),
     low_stock_threshold: z.number().min(0),
   }).parse(d))
   .handler(async ({ data, context }) => {
     await requireAdminRole(context.supabase, context.userId, "ingredient management");
     const payload = data.id
-      ? { name: data.name, unit: data.unit, low_stock_threshold: data.low_stock_threshold }
+      ? { name: data.name, item_type: data.item_type, unit: data.unit, low_stock_threshold: data.low_stock_threshold }
       : { ...data, current_stock: data.initial_stock, added_stock: 0 };
     const result = data.id
       ? await context.supabase.from("inventory_items").update(payload).eq("id", data.id)

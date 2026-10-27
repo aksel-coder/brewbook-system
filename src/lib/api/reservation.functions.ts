@@ -563,6 +563,31 @@ export const listCustomerReservations = createServerFn({ method: "GET" })
     }));
   });
 
+export const cancelCustomerReservation = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((data) => z.object({ reservation_id: z.string().uuid() }).parse(data))
+  .handler(async ({ context, data }) => {
+    await authorizeReservationAdmin(context.userId);
+
+    const { data: reservation, error } = await supabaseAdmin
+      .from("reservations")
+      .update({ status: "CANCELED" })
+      .eq("id", data.reservation_id)
+      .eq("status", "PENDING")
+      .select("id, reservation_number")
+      .maybeSingle();
+
+    if (error) {
+      reportServerFailure("Unable to cancel reservation.", error);
+      throw new Error("The reservation could not be canceled. Refresh and try again.");
+    }
+    if (!reservation) {
+      throw new Error("Only pending reservations can be canceled. Refresh the reservation list.");
+    }
+
+    return { id: reservation.id, reservation_number: reservation.reservation_number };
+  });
+
 export const getCustomerReservation = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .inputValidator((data) => z.object({ reservation_id: z.string().uuid() }).parse(data))

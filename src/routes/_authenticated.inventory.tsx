@@ -39,7 +39,7 @@ function Inventory() {
     ...(items as any[]).map((item) => ({
       ...item,
       kind: "ingredient",
-      category: "Raw Ingredient",
+      category: item.item_type ?? "Ingredients",
     })),
     ...(products as any[])
       .filter((product: any) => normalizeCategoryType(product?.categories?.category_type) !== "recipe_based")

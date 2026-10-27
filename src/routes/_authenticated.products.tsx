@@ -164,7 +164,7 @@ function Products() {
   const [catOpen, setCatOpen] = useState(false);
   const [catName, setCatName] = useState("");
   const [catType, setCatType] = useState<"Finished Good" | "recipe_based">("Finished Good");
-  const [ingredientForm, setIngredientForm] = useState({ name: "", unit: "g", initial_stock: "", low_stock_threshold: "" });
+  const [ingredientForm, setIngredientForm] = useState({ name: "", item_type: "Ingredients", unit: "g", initial_stock: "", low_stock_threshold: "" });
   const [recipes, setRecipes] = useState<RecipeDraft[]>([]);
   const [variants, setVariants] = useState<VariantDraft[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -273,12 +273,13 @@ function Products() {
     try {
       await saveIngredient({ data: {
         name: ingredientForm.name,
-        unit: ingredientForm.unit as "g" | "ml" | "pcs" | "oz",
+        item_type: ingredientForm.item_type as "Ingredients" | "Materials",
+        unit: ingredientForm.unit as "g" | "ml" | "l" | "pcs" | "oz",
         initial_stock: Number(ingredientForm.initial_stock),
         low_stock_threshold: Number(ingredientForm.low_stock_threshold),
       } });
-      toast.success("Ingredient added");
-      setIngredientForm({ name: "", unit: "g", initial_stock: "", low_stock_threshold: "" });
+      toast.success("Inventory item added");
+      setIngredientForm({ name: "", item_type: "Ingredients", unit: "g", initial_stock: "", low_stock_threshold: "" });
       qc.invalidateQueries({ queryKey: ["inventoryItems"] });
     } catch (e: any) { toast.error(e.message); }
   };
@@ -448,14 +449,21 @@ function Products() {
           <Card>
             <CardHeader><CardTitle className="font-display">Ingredients</CardTitle></CardHeader>
             <CardContent className="space-y-3">
-              {isAdmin && <form onSubmit={addIngredient} className="grid gap-2 sm:grid-cols-5">
-                <Input required placeholder="Ingredient Name" value={ingredientForm.name} onChange={(e) => setIngredientForm({ ...ingredientForm, name: e.target.value })} />
-                <Select value={ingredientForm.unit} onValueChange={(unit) => setIngredientForm({ ...ingredientForm, unit })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{["g", "ml", "pcs", "oz"].map((unit) => <SelectItem key={unit} value={unit}>{unit}</SelectItem>)}</SelectContent></Select>
+              {isAdmin && <form onSubmit={addIngredient} className="grid gap-2 sm:grid-cols-6">
+                <Input required placeholder="Item Name" value={ingredientForm.name} onChange={(e) => setIngredientForm({ ...ingredientForm, name: e.target.value })} />
+                <Select value={ingredientForm.item_type} onValueChange={(item_type) => setIngredientForm({ ...ingredientForm, item_type })}>
+                  <SelectTrigger aria-label="Item Type"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Ingredients">Ingredients</SelectItem>
+                    <SelectItem value="Materials">Materials</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={ingredientForm.unit} onValueChange={(unit) => setIngredientForm({ ...ingredientForm, unit })}><SelectTrigger aria-label="Unit"><SelectValue /></SelectTrigger><SelectContent>{[["g", "Grams (g)"], ["ml", "Milliliters (ml)"], ["l", "Liters (l)"], ["pcs", "Pieces (pcs)"], ["oz", "Ounces (oz)"]].map(([unit, label]) => <SelectItem key={unit} value={unit}>{label}</SelectItem>)}</SelectContent></Select>
                 <Input required type="number" min="0" step="any" placeholder="Initial Stock" value={ingredientForm.initial_stock} onChange={(e) => setIngredientForm({ ...ingredientForm, initial_stock: e.target.value })} />
                 <Input required type="number" min="0" step="any" placeholder="Low Stock Threshold" value={ingredientForm.low_stock_threshold} onChange={(e) => setIngredientForm({ ...ingredientForm, low_stock_threshold: e.target.value })} />
                 <Button type="submit">Add</Button>
               </form>}
-              <ul className="divide-y">{(ingredients as any[]).map((item) => <li key={item.id} className="flex items-center justify-between py-2"><span>{item.name} <span className="text-xs text-muted-foreground">({item.unit})</span></span>{isAdmin && <Button size="icon" variant="ghost" className="text-destructive" onClick={async () => { try { await delIngredient({ data: { id: item.id } }); qc.invalidateQueries({ queryKey: ["inventoryItems"] }); toast.success("Deleted"); } catch (e: any) { toast.error(e.message); } }}><Trash2 className="h-4 w-4" /></Button>}</li>)}</ul>
+              <ul className="divide-y">{(ingredients as any[]).map((item) => <li key={item.id} className="flex items-center justify-between py-2"><span>{item.name} <span className="text-xs text-muted-foreground">({item.item_type ?? "Ingredients"} · {item.unit})</span></span>{isAdmin && <Button size="icon" variant="ghost" className="text-destructive" onClick={async () => { try { await delIngredient({ data: { id: item.id } }); qc.invalidateQueries({ queryKey: ["inventoryItems"] }); toast.success("Deleted"); } catch (e: any) { toast.error(e.message); } }}><Trash2 className="h-4 w-4" /></Button>}</li>)}</ul>
             </CardContent>
           </Card>
         </TabsContent>

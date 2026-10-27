@@ -12,6 +12,7 @@ export type Database = {
         Row: {
           id: string;
           name: string;
+          item_type: "Ingredients" | "Materials";
           unit: string;
           initial_stock: number;
           added_stock: number;
@@ -23,6 +24,7 @@ export type Database = {
         Insert: {
           id?: string;
           name: string;
+          item_type?: "Ingredients" | "Materials";
           unit: string;
           initial_stock?: number;
           added_stock?: number;
@@ -34,6 +36,7 @@ export type Database = {
         Update: {
           id?: string;
           name?: string;
+          item_type?: "Ingredients" | "Materials";
           unit?: string;
           initial_stock?: number;
           added_stock?: number;
@@ -197,7 +200,7 @@ export type Database = {
           pickup_date: string;
           pickup_time: string;
           reservation_number: string;
-          status: "PENDING" | "COMPLETED";
+          status: "PENDING" | "COMPLETED" | "CANCELED";
           total_amount: number;
         };
         Insert: {
@@ -210,7 +213,7 @@ export type Database = {
           pickup_date: string;
           pickup_time: string;
           reservation_number?: string;
-          status?: "PENDING" | "COMPLETED";
+          status?: "PENDING" | "COMPLETED" | "CANCELED";
           total_amount: number;
         };
         Update: {
@@ -223,7 +226,7 @@ export type Database = {
           pickup_date?: string;
           pickup_time?: string;
           reservation_number?: string;
-          status?: "PENDING" | "COMPLETED";
+          status?: "PENDING" | "COMPLETED" | "CANCELED";
           total_amount?: number;
         };
         Relationships: [];
